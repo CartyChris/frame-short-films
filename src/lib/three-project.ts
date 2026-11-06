@@ -1,0 +1,18 @@
+import type {Project,Scene} from './types';
+import type {ModelAsset,ThreeDocument} from './three/types';
+import {builtInModels,createThreeDocument} from './three/document';
+import {emptyStory} from './story';
+import {uid} from './storage';
+export function withDefaultModels(models:ModelAsset[]=[]):ModelAsset[]{return [...models,...builtInModels.filter(m=>!models.some(x=>x.id===m.id)).map(m=>structuredClone(m))]}
+export function newThreeScene(preset:ThreeDocument['environment']['preset']='meadow',duration=12,title='A moment in motion'):Scene{return {id:uid(),title,duration,code:'',notes:'Continuous character performance, purposeful camera motion, atmospheric depth. Reuse the shared cast without changing its identity.',transition:'cut',color:'#88a99c',layers:[],three:createThreeDocument(preset,duration),continuity:{summary:'The friends explore the world together.',characterIds:[],locationIds:[],stateAfter:{},mustInclude:[],medium:'3d'}}}
+export function createThreeDemo():Project{
+ const story=emptyStory(48);story.logline='Three friends discover that the path ahead begins with the light they carry together.';story.world='A handcrafted garden settlement: warm wood, stone arches, grasses, drifting seeds, and a small workshop.';story.visualStyle='Cinematic stylized 3D. Rounded low-poly forms, warm natural materials, varied skin tones, expressive articulated motion. Shots contain action; titles do not dominate the frame.';
+ story.lockedFacts=['Ava always has dark curly hair and a terracotta jacket.','Leo wears a golden shirt. Mira wears teal with plum trousers.','The friends remain companions throughout; the lantern is the shared motif.'];story.initialState={location:'garden',companions:'Ava, Leo, Mira',time:'morning'};
+ story.characters=builtInModels.filter(m=>m.appearance).map(m=>({id:m.id,name:m.name.split(' · ')[0],role:m.name.split(' · ')[1],appearance:JSON.stringify(m.appearance),personality:'Curious, expressive, and kind.',voice:'Natural and warm.',referenceAssetIds:[m.id],locked:true}));
+ story.locations=[{id:'garden-home',name:'The atelier garden',description:story.world,lighting:'Warm daylight with atmospheric depth.',referenceAssetIds:['set-house','set-arch','set-tree','set-lantern'],locked:true}];
+ const durations=[12,10,14,12],titles=['The invitation','A shared discovery','A little courage','The journey continues'];let offset=0;
+ const scenes=durations.map((duration,index)=>{const s=newThreeScene('meadow',duration,titles[index]);s.three!.duration=48;s.three!.title='';s.three!.subtitle='';s.sourceOffset=offset;
+  s.three!.camera=index===0?{position:[10,6.5,12],target:[0,1.2,0],fov:42,motion:'dolly',amplitude:.16}:index===1?{position:[3,2.5,8],target:[0,1.2,0],fov:36,motion:'orbit',amplitude:.1}:index===2?{position:[-6,3,8],target:[0,1.3,0],fov:42,motion:'dolly',amplitude:.2}:{position:[8,5,12],target:[0,1,0],fov:46,motion:'orbit',amplitude:.12};
+  s.continuity={summary:['Ava walks into the garden as Leo greets her and Mira celebrates.','The camera moves closer to their shared discovery.','The friends gather their courage beside the lantern.','The camera opens out to the world they will explore together.'][index],characterIds:story.characters.map(c=>c.id),locationIds:['garden-home'],stateAfter:{beat:String(index+1),location:'garden',companions:'Ava, Leo, Mira'},mustInclude:['Keep the same canonical cast and costumes.','Continue body animation through the cut.'],medium:'3d'};offset+=duration;return s});
+ return {id:uid(),name:'The Lantern Road',createdAt:Date.now(),updatedAt:Date.now(),scenes,models:structuredClone(builtInModels),story,audio:[],brief:story.logline,settings:{width:1920,height:1080,fps:30,background:'#101316',volume:.8}};
+}

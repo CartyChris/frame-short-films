@@ -1,0 +1,58 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Frame",
+  "version": "5.0.0",
+  "identifier": "studio.frame.shortfilms",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeBuildCommand": "bash scripts/build-desktop.sh",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Frame \u2014 Short Films AI Harness",
+        "width": 1440,
+        "height": 960,
+        "minWidth": 960,
+        "minHeight": 640,
+        "backgroundColor": "#111316"
+      }
+    ],
+    "security": {
+      "dangerousDisableAssetCspModification": [
+        "script-src",
+        "style-src"
+      ],
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; media-src 'self' data: blob: https:; frame-src 'self' blob: data:; connect-src 'self' blob: ipc: http://ipc.localhost https: http://127.0.0.1:4319 http://localhost:4319; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'",
+      "capabilities": [
+        "main"
+      ]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "resources": {
+      "resources/frame-companion": "frame-companion"
+    },
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns"
+    ],
+    "category": "Video",
+    "shortDescription": "An AI film studio with recoverable generation and portable exports.",
+    "macOS": {
+      "signingIdentity": "-",
+      "minimumSystemVersion": "12.0",
+      "infoPlist": "Info.plist"
+    }
+  }
+}

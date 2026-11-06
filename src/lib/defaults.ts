@@ -1,0 +1,8 @@
+import type {Project,Scene,Layer,Asset} from './types';
+import {createTemplate} from './templates';
+import {uid} from './storage';
+export function newScene(template='paper',title='An untold story',duration=5):Scene{return {id:uid(),title,duration,template,notes:'',transition:'dissolve',color:template==='cosmos'?'#8681c7':template==='aurora'?'#72a68f':'#c59a62',layers:[],code:createTemplate(template,{title,subtitle:'A little imagination. An entirely new world.',duration})}}
+export function newProject(name='An inheritance of wonder'):Project {const scenes=[newScene('paper','The art of wonder',7),newScene('cosmos','Look a little closer',7),newScene('kinetic','Ideas become worlds',6),newScene('aurora','The story is yours',10)];return {id:uid(),name,createdAt:Date.now(),updatedAt:Date.now(),scenes,audio:[],brief:'A cinematic, paper-cut celebration of curiosity, beauty, and human imagination. Warm texture, thoughtful typography, and gentle camera movement.',settings:{width:1920,height:1080,fps:30,background:'#121316',volume:.8}}}
+export function newLayer(asset:Asset,duration=10):Layer{return {id:uid(),assetId:asset.id,name:asset.name,type:asset.kind,start:0,duration:Math.min(duration,asset.duration||duration),x:50,y:50,width:asset.kind==='audio'?100:70,opacity:1,rotation:0,blend:'normal',volume:.8,muted:false,loop:false,fadeIn:.3,fadeOut:.5,trim:0}}
+export function formatTime(n:number){const seconds=Math.max(0,n);return `${Math.floor(seconds/60).toString().padStart(2,'0')}:${Math.floor(seconds%60).toString().padStart(2,'0')}`}
+export function fileName(name:string){return name.replace(/[^a-zA-Z0-9_-]+/g,'-').replace(/^-|-$/g,'').slice(0,100)||'film'}

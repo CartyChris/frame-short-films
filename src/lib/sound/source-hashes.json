@@ -1,0 +1,58 @@
+[
+  {
+    "path": "shared/time.ts",
+    "sha256": "1539521a0b0aada00c030df469917017b21f2c64e4932797cba6695a4500ed4b"
+  },
+  {
+    "path": "shared/wav.ts",
+    "sha256": "5812525949bf5805b8452e8ccd17423c96bcd3b1309b9cf34bba1fa070ab7290"
+  },
+  {
+    "path": "shared/project.ts",
+    "sha256": "7c3f7e9683c04c3a5fbb9b7610a1d77218dd64dca83b823c183d0ed1bf390eb3"
+  },
+  {
+    "path": "shared/producer.ts",
+    "sha256": "b9be5bddacf4674924200227a6a137380128258b4ce8e784daf8b926d1b5c29d"
+  },
+  {
+    "path": "shared/director.ts",
+    "sha256": "205b81bf6e726be55832df37c442f51b53a7405abb594069004e3af2e975600e"
+  },
+  {
+    "path": "src/state/production.ts",
+    "sha256": "b5b9a6df0b1cbab9a663d1c0b9e451f244999de666404498f98d74964b2cc658"
+  },
+  {
+    "path": "src/engine/dsp.ts",
+    "sha256": "09cb5faed8621bec12096d6340de759571da48e0075a9051e4accd253bfdbcb9"
+  },
+  {
+    "path": "src/engine/analysis.ts",
+    "sha256": "3db5f50e27a0d3ce3d5f3be99460de156327ae54eca51af6000a09a85d94dc9c"
+  },
+  {
+    "path": "src/engine/kits.ts",
+    "sha256": "bd9d1e7f3347b4c102be3a3739beb852ac927e930c7d49b3ec5b2474c791e89a"
+  },
+  {
+    "path": "src/engine/instruments.ts",
+    "sha256": "506ac080150b4cced7c73a1fa246e272688efd134641abf0379c8c4453495d5b"
+  },
+  {
+    "path": "src/engine/effects.ts",
+    "sha256": "226f7b79241a96d7778ce563b3dabbe1c3cc3f67c8b13cb709e1ec7e6ca9a05a"
+  },
+  {
+    "path": "src/engine/events.ts",
+    "sha256": "0447c43abc633b3e2cbfb23aa5bfb15fee0d6dbffc8e8d6c0558dd75e8a83b3e"
+  },
+  {
+    "path": "src/engine/graph.ts",
+    "sha256": "5d32746076f2f155d9528f02e075175f31515d108ac28cbb027f9989dc632ee7"
+  },
+  {
+    "path": "src/engine/sampler.ts",
+    "sha256": "bb7dff0a0ee2b9949ff99f9a080de0842c53a6ce9ee51619929389cf32d8b835"
+  }
+]

@@ -1,0 +1,7 @@
+{
+  "$schema":"../gen/schemas/desktop-schema.json",
+  "identifier":"main",
+  "description":"Frame's main window can use its exact backup commands and fixed provider proxy. Generated preview frames receive no native capability.",
+  "windows":["main"],
+  "permissions":["allow-save-export","allow-open-exports-folder","allow-start-companion","allow-save-project-backup","allow-list-project-backups","allow-read-project-backup","allow-native-core","allow-proxy-request"]
+}

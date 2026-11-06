@@ -1,0 +1,32 @@
+[[permission]]
+identifier = "allow-save-project-backup"
+description = "Append an exact source backup inside Frame's app-data directory."
+commands.allow = ["save_project_backup"]
+[[permission]]
+identifier = "allow-list-project-backups"
+description = "List retained backups for one Frame project."
+commands.allow = ["list_project_backups"]
+[[permission]]
+identifier = "allow-read-project-backup"
+description = "Read one retained Frame project backup."
+commands.allow = ["read_project_backup"]
+[[permission]]
+identifier = "allow-native-core"
+description = "Query the shared deterministic Rust animation core."
+commands.allow = ["native_core"]
+[[permission]]
+identifier = "allow-proxy-request"
+description = "Make a credentialed request to a fixed AI-provider HTTPS endpoint."
+commands.allow = ["proxy_request"]
+[[permission]]
+identifier = "allow-save-export"
+description = "Atomically save an export with a unique safe filename inside Frame's own app-data exports folder."
+commands.allow = ["save_export"]
+[[permission]]
+identifier = "allow-open-exports-folder"
+description = "Open only Frame's own exports folder in Finder; no caller-supplied path or command."
+commands.allow = ["open_exports_folder"]
+[[permission]]
+identifier = "allow-start-companion"
+description = "Start and reuse the bundled localhost CLI companion for Frame; it stops when Frame exits."
+commands.allow = ["start_companion"]

@@ -1,0 +1,35 @@
+import 'fake-indexeddb/auto';
+import {afterEach,expect,it,vi} from 'vitest';
+import {createMotionDocument} from '../src/lib/motion/document';
+import {newProject} from '../src/lib/defaults';
+import {createPipeline,runPipeline} from '../src/lib/pipeline';
+import {generateScene,makeMessages} from '../src/lib/generation';
+import {parseStoryPlan} from '../src/lib/production';
+import * as Store from '../src/lib/storage';
+import type {GenerationRun,ProviderConnection} from '../src/lib/types';
+const connection=(provider='openrouter'):ProviderConnection=>({id:provider,provider,name:provider,model:'fixture-only',apiKey:'fixture',maxTokens:8000,temperature:1});
+const response=(text:string,done=true)=>new Response(JSON.stringify({type:'delta',text})+'\n'+(done?JSON.stringify({type:'done',finishReason:'stop'})+'\n':''));
+afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals()});
+it('keeps a cut-off motion document, switches agents and restores the exact saved prefix',async()=>{
+ vi.stubGlobal('localStorage',{getItem:()=>null});const project=newProject(),scene=project.scenes[0];scene.motion=createMotionDocument('orbit',scene.duration);scene.code='';scene.template=undefined;
+ const text=JSON.stringify(scene.motion),prefix=text.slice(0,197);let first:GenerationRun|undefined;
+ const fetcher=vi.spyOn(globalThis,'fetch').mockResolvedValueOnce(response(prefix,false)).mockResolvedValueOnce(response(text.slice(prefix.length)));
+ await expect(generateScene({project,scene,connection:connection(),prompt:'Give the planets a gentler orbit',signal:new AbortController().signal,onStart:r=>{first=r},onDelta:()=>{}})).rejects.toThrow('ended early');
+ expect(first?.format).toBe('motion-scene');expect(await Store.getDraft(first!)).toBe(prefix);
+ await Store.resetDbForTest();const saved=(await Store.getRun(first!.id))!;
+ const resumed=await generateScene({project,scene,connection:connection('venice'),parent:saved,prompt:saved.prompt,signal:new AbortController().signal,onStart:()=>{},onDelta:()=>{}});
+ expect(resumed.text).toBe(text);expect(resumed.run.format).toBe('motion-scene');expect(await Store.getDraft(first!)).toBe(prefix);
+ const req=JSON.parse(String(fetcher.mock.calls[1][1]?.body));expect(req.provider).toBe('venice');expect(req.messages.some((m:any)=>m.role==='assistant'&&m.content===prefix)).toBe(true);
+});
+it('produces editable motion from a saved plan and preserves replaced source in Recovery',async()=>{
+ vi.stubGlobal('localStorage',{getItem:()=>null});let project=newProject();const scene=project.scenes[0],original=scene.code;scene.duration=4;
+ const queue=parseStoryPlan(JSON.stringify({title:'Choreography',scope:'film',instruction:'Animate shapes',scenes:[{sceneId:scene.id,title:'Dance',duration:4,summary:'A circle crosses the scene',instruction:'A continuous arc',medium:'motion',characterIds:[],locationIds:[],stateAfter:{}}]}),project);queue.status='ready';
+ const job=createPipeline('Animate a circle',{duration:4,mode:'planned',music:false,narration:false,assembleOnly:false},queue.id);job.tasks=[{id:crypto.randomUUID(),kind:'scene',label:'Dance',targetId:queue.items[0].id,status:'pending',attempts:0}];project.production=[queue];project.pipelines=[job];
+ const raw=JSON.stringify(createMotionDocument('orbit',4));const fetcher=vi.spyOn(globalThis,'fetch').mockImplementation(async()=>{const p=await Store.getProject(project.id);expect(p?.pipelines?.[0].tasks[0].runId).toBeTruthy();return response(raw)});
+ await runPipeline({projectId:project.id,pipelineId:job.id,getProject:()=>project,commit:async fn=>{project=fn(project);await Store.saveProject(project);return project},connection:()=>connection(),mediaConnection:()=>undefined,signal:new AbortController().signal});
+ expect(project.pipelines![0].state).toBe('complete');expect(project.scenes[0].motion?.objects.length).toBeGreaterThan(1);expect(project.scenes[0].code).toBe('');expect(project.scenes[0].three).toBeUndefined();expect((await Store.getRevisions(project.id)).some(r=>r.code===original)).toBe(true);expect(fetcher).toHaveBeenCalledTimes(1);
+ const archive=await Store.createArchive(project),restored=await Store.importArchive(archive);expect(restored.scenes[0].motion).toEqual(project.scenes[0].motion);expect(restored.scenes[0].id).not.toBe(scene.id);
+});
+it('includes editable motion constraints and canon in an AI revision',()=>{const p=newProject();p.scenes[0].motion=createMotionDocument('paper',5);const messages=makeMessages(p,p.scenes[0],'Keep the cast consistent','','motion-scene');expect(messages[0].content).toContain('MotionDocument');expect(messages[1].content).toContain('CURRENT MOTION DOCUMENT');expect(messages[1].content).toContain('Keep the cast consistent')});
+it('preserves a trimmed source clock through AI revision and rejects a clip-sized restart',async()=>{const {splitScene}=await import('../src/lib/editing'),{motionRevisionPatch}=await import('../src/lib/motion-revision');const p=newProject(),source={...p.scenes[0],duration:8,motion:createMotionDocument('orbit',8),template:undefined};const [,clip]=splitScene(source,4);const messages=makeMessages(p,clip,'Make the final arc slower','','motion-scene');expect(messages[0].content).toContain('source document duration must be 8');expect(messages[0].content).toContain('starts at source time 4');const patch=motionRevisionPatch(clip,clip.motion);expect(patch.sourceOffset).toBe(4);expect(patch.motion?.duration).toBe(8);expect(()=>motionRevisionPatch(clip,createMotionDocument('paper',4))).toThrow('source duration must be 8');});
+it('keeps imported vector artwork outside model context and resolves its identity after revision',async()=>{const {motionRevisionPatch}=await import('../src/lib/motion-revision');const p=newProject(),scene=p.scenes[0];scene.motion=createMotionDocument('orbit',scene.duration);const lottie={v:'5.13.0',w:100,h:100,ip:0,op:60,fr:30,layers:[],assets:[]};scene.motion.objects.push({id:'vector-hero',name:'Original vector',kind:'lottie',width:100,height:100,fill:'#ffffff',transform:{x:1,y:2,scaleX:1,scaleY:1,opacity:1,rotation:0},keyframes:[],lottie});const messages=makeMessages(p,scene,'Move the imported artwork right','','motion-scene');expect(messages[1].content).toContain('lottieRef');expect(messages[1].content).not.toContain('"layers"');const raw={...scene.motion,objects:scene.motion.objects.map(o=>o.kind==='lottie'?{...o,lottie:undefined,lottieRef:o.id,transform:{...o.transform,x:300}}:o)};const patched=motionRevisionPatch(scene,raw);expect(patched.motion?.objects.at(-1)?.lottie).toEqual(lottie);expect(patched.motion?.objects.at(-1)?.transform.x).toBe(300);expect(()=>motionRevisionPatch(scene,{...raw,objects:[{...raw.objects.at(-1),lottieRef:'invented'}]})).toThrow('existing vector');});

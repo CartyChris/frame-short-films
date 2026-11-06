@@ -1,0 +1,21 @@
+import 'fake-indexeddb/auto';
+import {afterEach,expect,it,vi} from 'vitest';
+import {newProject} from '../src/lib/defaults';
+import {createPipeline,runPipeline} from '../src/lib/pipeline';
+import {parseStoryPlan} from '../src/lib/production';
+import {splitScene} from '../src/lib/editing';
+import {builtInModels,createThreeDocument,sampleTransform} from '../src/lib/three/document';
+import {defaultPhysicsBody,defaultPhysicsDocument,physicsBakeStatus} from '../src/lib/three/physics-types';
+import * as Store from '../src/lib/storage';
+afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals()});
+it('automatically rebakes a trimmed AI physics revision while preserving source time and archive recovery',async()=>{
+ vi.stubGlobal('localStorage',{getItem:()=>null});let project=newProject();project.models=builtInModels;
+ const source={...project.scenes[0],code:'',duration:6,template:undefined,three:createThreeDocument('studio',6)};
+ source.three.instances=source.three.instances.slice(0,1);const actor=source.three.instances[0];actor.position=[0,4,0];actor.animation={preset:'none',speed:1,phase:0};source.three.physics={...defaultPhysicsDocument(6),bodies:[defaultPhysicsBody(actor.id)]};
+ const [,clip]=splitScene(source,3);project.scenes=[clip];const queue=parseStoryPlan(JSON.stringify({title:'Continue the fall',scope:'film',instruction:'Keep this moment',scenes:[{sceneId:clip.id,title:clip.title,duration:3,summary:'The character settles',instruction:'Change only the title',medium:'3d',characterIds:[],locationIds:[],stateAfter:{}}]}),project);queue.status='ready';
+ const job=createPipeline('Continue the fall',{duration:3,mode:'planned',music:false,narration:false,assembleOnly:false},queue.id);job.tasks=[{id:crypto.randomUUID(),kind:'scene',label:'Revise',targetId:queue.items[0].id,status:'pending',attempts:0}];project.production=[queue];project.pipelines=[job];
+ const text=JSON.stringify({...clip.three,title:'Settled'});const fetcher=vi.spyOn(globalThis,'fetch').mockResolvedValue(new Response(JSON.stringify({type:'delta',text})+'\n'+JSON.stringify({type:'done',finishReason:'stop'})+'\n'));
+ await runPipeline({projectId:project.id,pipelineId:job.id,getProject:()=>project,commit:async fn=>{project=fn(project);await Store.saveProject(project);return project},connection:()=>({id:'fixture',provider:'openrouter',name:'Fixture',model:'fixture-only',apiKey:'not-real',maxTokens:8000,temperature:1}),mediaConnection:()=>undefined,signal:new AbortController().signal});
+ expect(project.pipelines![0].state).toBe('complete');expect(fetcher).toHaveBeenCalledTimes(1);const result=project.scenes[0];expect(result.sourceOffset).toBe(3);expect(result.duration).toBe(3);expect(result.three!.duration).toBe(6);expect(physicsBakeStatus(result.three!)).toBe('ready');expect(sampleTransform(result.three!.instances[0],3).position[1]).toBeLessThan(1);expect(sampleTransform(result.three!.instances[0],0).position[1]).toBe(4);expect((await Store.getRevisions(project.id))[0].scene!.sourceOffset).toBe(3);
+ const restored=await Store.importArchive(await Store.createArchive(project));expect(restored.scenes[0].sourceOffset).toBe(3);expect(physicsBakeStatus(restored.scenes[0].three!)).toBe('ready');
+});

@@ -1,0 +1,13 @@
+import {describe,it,expect} from 'vitest';
+import {splitScene} from '../src/lib/editing';
+import type {Layer,Scene} from '../src/lib/types';
+const layer=(id:string,start:number,duration:number):Layer=>({id,assetId:id,name:id,type:'video',start,duration,x:50,y:50,width:70,opacity:.8,rotation:15,blend:'screen',volume:.7,muted:false,loop:true,fadeIn:4,fadeOut:3,trim:2});
+const scene:Scene={id:'scene',title:'Original',duration:10,code:'original code stays byte-for-byte',notes:'test',transition:'dissolve',color:'#123',layers:[layer('early',0,2),layer('across',2,7),layer('later',7,3)]};
+const alpha=(l:Layer,time:number)=>{const t=time-l.start+(l.envelopeOffset||0),len=l.envelopeDuration??l.duration;return l.opacity*Math.min(1,Math.max(0,t/l.fadeIn))*Math.min(1,Math.max(0,(len-t)/l.fadeOut))};
+describe('content-preserving scene splitting',()=>{
+ it('keeps code and absolute source clock continuous with no inserted dissolve',()=>{const [a,b]=splitScene(scene,5);expect(a.id).toBe(scene.id);expect(b.id).not.toBe(scene.id);expect(a.duration+b.duration).toBe(10);expect(a.sourceOffset).toBe(0);expect(b.sourceOffset).toBe(5);expect(a.code).toBe(scene.code);expect(b.code).toBe(scene.code);expect(a.transition).toBe('dissolve');expect(b.transition).toBe('cut');expect(scene.duration).toBe(10)});
+ it('keeps only overlapping layers, rebases times, and advances media trim',()=>{const [a,b]=splitScene(scene,5);expect(a.layers.map(l=>l.name)).toEqual(['early','across']);expect(b.layers.map(l=>l.name)).toEqual(['across','later']);expect(a.layers[1].duration).toBe(3);expect(b.layers[0].start).toBe(0);expect(b.layers[0].duration).toBe(4);expect(b.layers[0].trim).toBe(5);expect(b.layers[1].start).toBe(2);expect(b.layers.every(l=>!scene.layers.some(old=>old.id===l.id))).toBe(true)});
+ it('preserves original fade values at every surviving position',()=>{const [a,b]=splitScene(scene,5),original=scene.layers[1];for(const t of [2,2.5,3,4.5,5,5.5,6,7,8.9]){const piece=t<5?a.layers[1]:b.layers[0];expect(alpha(piece,t<5?t:t-5)).toBeCloseTo(alpha(original,t),12)}});
+ it('supports repeated splitting without resetting offsets or fade envelopes',()=>{const [,second]=splitScene(scene,5);const [middle,last]=splitScene(second,2);expect(middle.sourceOffset).toBe(5);expect(last.sourceOffset).toBe(7);const retained=last.layers.find(l=>l.name==='across')!;expect(retained.trim).toBe(7);expect(retained.envelopeOffset).toBe(5);expect(retained.envelopeDuration).toBe(7);expect(alpha(retained,1)).toBeCloseTo(alpha(scene.layers[1],8),12)});
+ it('does not produce empty or invalid halves',()=>{for(const t of [-1,0,10,11,NaN,Infinity])expect(()=>splitScene(scene,t)).toThrow(/inside/)});
+});

@@ -1,0 +1,10 @@
+export interface PathTracingSettings {enabled:boolean;samples:number;previewSamples:number;bounces:number;renderScale:number}
+export interface PathTracingStatus {state:'disabled'|'preview'|'compiling'|'rendering'|'complete'|'error';samples:number;targetSamples:number;error?:string;warnings?:string[]}
+export const DEFAULT_PATH_TRACING:Readonly<PathTracingSettings>=Object.freeze({enabled:false,samples:16,previewSamples:4,bounces:4,renderScale:.5});
+export const PATH_TRACING_LIMITS=Object.freeze({samples:[1,64],previewSamples:[1,16],bounces:[1,8],renderScale:[.25,1]} as const);
+export function normalizePathTracing(input:unknown):PathTracingSettings {
+ const value=input&&typeof input==='object'&&!Array.isArray(input)?input as Record<string,unknown>:{};
+ const number=(key:Exclude<keyof PathTracingSettings,'enabled'>,integer=false)=>{const [min,max]=PATH_TRACING_LIMITS[key],raw=value[key];const n=typeof raw==='number'&&Number.isFinite(raw)?Math.min(max,Math.max(min,raw)):DEFAULT_PATH_TRACING[key];return integer?Math.round(n):n};
+ return {enabled:value.enabled===true,samples:number('samples',true),previewSamples:number('previewSamples',true),bounces:number('bounces',true),renderScale:number('renderScale')};
+}
+export const PATH_TRACING_AGENT_SCHEMA='Optional pathTracing:{enabled:boolean,samples:1..64 integer,previewSamples:1..16 integer,bounces:1..8 integer,renderScale:0.25..1}. Defaults disabled,16 final samples,4 preview samples,4 bounces,0.5 resolution scale. This is real GPU WebGL path tracing of mesh surfaces. Rendered frames wait for the configured final sample count; higher samples cost time. Preserve existing settings unless requested. The interactive Explore view remains raster for responsive editing; Film camera uses the traced view. Native viewer support depends on WebGL2 float render targets. Screen-space film finishing remains supported. Three fog is not a traced volume; disable fog for matching intent. No scripts, shaders, URLs or arbitrary renderer options belong in this configuration.';

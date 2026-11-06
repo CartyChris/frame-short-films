@@ -1,0 +1,41 @@
+# Dependencies and generated output
+node_modules/
+dist/
+**/target/
+src-tauri/gen/
+.vite/
+.vercel/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# Local credentials and personal configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.p8
+*.mobileprovision
+auth.json
+credentials.json
+settings.local.json
+*.log
+
+# Local project/media backups and OS metadata
+.frame-backups/
+*.frame.json
+*.frame.zip
+.DS_Store
+.AppleDouble
+Thumbs.db
+
+# Retain Cargo.lock for reproducible application builds and public/film_core.wasm for hosting.
+.vercel
+
+# Rebuilt native resources and Python caches
+src-tauri/resources/frame-companion
+__pycache__/
+*.pyc

@@ -1,0 +1,41 @@
+name: Build macOS app (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      api_origin:
+        description: HTTPS address of your Frame Vercel deployment
+        required: true
+        type: string
+        default: https://frame-short-films.vercel.app
+permissions:
+  contents: read
+jobs:
+  desktop:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - run: npm ci
+      - run: cargo test --manifest-path crates/film-storage/Cargo.toml --locked
+      - run: cargo test --manifest-path companion/Cargo.toml --locked
+      - run: cargo build --release --manifest-path companion/Cargo.toml --locked
+      - run: npm run desktop:build
+        env:
+          VITE_API_ORIGIN: ${{ inputs.api_origin }}
+      - name: Archive app bundle
+        run: ditto -c -k --sequesterRsrc --keepParent src-tauri/target/release/bundle/macos/Frame.app Frame-macOS.zip
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Frame-macOS-unsigned
+          path: |
+            Frame-macOS.zip
+            src-tauri/target/release/bundle/dmg/*.dmg
+            companion/target/release/frame-companion
+          retention-days: 14

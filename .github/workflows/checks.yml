@@ -1,0 +1,41 @@
+name: Verify Frame
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  web-and-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - run: npm ci
+      - run: npm run wasm
+      - run: cargo test --manifest-path crates/film-core/Cargo.toml --locked
+      - run: cargo test --manifest-path crates/film-storage/Cargo.toml --locked
+      - run: cargo test --manifest-path companion/Cargo.toml --locked
+      - run: npx playwright install --with-deps chromium webkit
+      - name: Select the installed browser
+        run: node -e 'require("node:fs").appendFileSync(process.env.GITHUB_ENV, "CHROME_PATH=" + require("playwright").chromium.executablePath() + "\n")'
+      - run: python3 -m unittest discover -s scripts/production -p 'test_*.py'
+      - run: python3 -m unittest discover -s integrations/tests -p 'test_*.py'
+      - run: npm test
+      - run: npm run build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: frame-web-build
+          path: dist/
+          retention-days: 7
