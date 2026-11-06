@@ -66,7 +66,7 @@ jobs:
           NODE
       - run: python3 -m unittest discover -s scripts/production -p 'test_*.py'
       - run: python3 -m unittest discover -s integrations/tests -p 'test_*.py'
-      - run: npm test
+      - run: npm test -- --maxWorkers=1
       - run: npm run build
       - uses: actions/upload-artifact@v7
         with:
