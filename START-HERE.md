@@ -1,6 +1,6 @@
 # Frame 5 — Short Films AI Harness
 
-[Open the hosted studio](https://frame-short-films.vercel.app). The included source also runs locally and builds a macOS app. Release-specific deployment and installer checks are in [VERIFICATION.md](docs/VERIFICATION.md).
+[Open the hosted studio](https://frame-short-films.vercel.app). The included source also runs locally and builds a macOS app. The private source repository is [CartyChris/frame-short-films](https://github.com/CartyChris/frame-short-films). Release-specific deployment and installer checks are in [VERIFICATION.md](docs/VERIFICATION.md).
 
 ## New simulation tools
 

@@ -4,7 +4,7 @@ Current version: 5.0.0. Prior release reports are retained under `docs/history`;
 
 | Command / check | Result |
 | --- | --- |
-| `npm test` | PASS — 389 tests, 44 files. Includes actual Jolt, Chrome/WebKit particle and GPU rendering, export clock serialization, and trimmed AI revision tests. |
+| `npm test` | PASS — 392 tests, 45 files (after the native shader compatibility fix). Includes actual Jolt, Chrome/WebKit particle and GPU rendering, export clock serialization, and trimmed AI revision tests. |
 | `node node_modules/typescript/bin/tsc --noEmit --pretty false` | PASS. |
 | `npm run test:e2e` | PASS — 27 local browser workflows, including bake/apply/export and split → interrupted generation → provider switch → apply. |
 | `cargo test --manifest-path crates/film-core/Cargo.toml --locked` | PASS — 4. |
@@ -21,13 +21,29 @@ Current version: 5.0.0. Prior release reports are retained under `docs/history`;
 
 ## Release publication gates
 
-Final native acceptance, deployment, package integrity and repository publication are recorded here after their final gates complete.
+- PASS: `vercel deploy --yes --prod --scope cloud-ops-game-time` — final production `dpl_HtDsb8S2bQmB1FWvd8AJjhPCDff7`, aliased to https://frame-short-films.vercel.app. Its `npm run build` completed successfully.
+- PASS: `FRAME_TEST_URL=https://frame-short-films.vercel.app npx playwright test e2e/media-race.spec.ts e2e/production-pipeline.spec.ts e2e/production-tools.spec.ts e2e/studio.spec.ts e2e/three-studio.spec.ts e2e/physics.spec.ts e2e/three-revision.spec.ts` — all 17 deployed workflows, repeated successfully after the shader fix.
+- PASS: separate fresh-context offline simulation — Jolt WASM chunk cached before first use; a new body was baked/applied offline; Quarks creation and seeking worked without page errors.
+- PASS: `node tools/check-pwa.mjs` — hosted app reopens offline, retains project/cast, reproduces the 3D frame and animates Motion; Chat/Produce/Casting/Sound/Studios open offline; public runtimes/WASM cached and API excluded.
+- PASS: deployed Three runtime, Motion runtime, Rust WASM and service worker bytes exactly match local public files.
+- PASS: source pushed to the private [CartyChris/frame-short-films](https://github.com/CartyChris/frame-short-films) repository. Hosted CI is being checked separately.
+- PASS: 323 implementation/configuration/test/asset hashes recorded in `RELEASE-SOURCE-SHA256.json`; release prose excluded so verification can be finalized without a circular hash.
+
+Native functional acceptance PASS; final Apple Silicon DMG and installed `/Applications/Frame.app` verified at SHA-256 `a1a19520d4ca9a344494869ddbddf311a88c0a98ea5c6c05de4c2d157510732a`. After the shader fix: actual WKWebView completes traced frames, seeks, captures a reference image, exports HTML and a complete project, and retains physics/particles after restart. See the native report for the final artifact hash and installed-app check. Package integrity is recorded below after final assembly.
+
+## Native shader compatibility
+
+The first actual macOS 27.0 (26A5388g) run failed path-tracing shader compilation with an ANGLE/Metal thread-address-space error, despite newer automated WebKit passing. This matches the [WebKit out/inout compiler defect](https://github.com/WebKit/WebKit/commit/4d4a69df0d2109f7d125e634a24c5d58bcab930e). Frame now passes two affected struct-member calls through ordinary local variables and copies their results back. The adapter checks exact pinned shader anchors and fails visibly if a future dependency changes them. No system browser settings or OS files are modified. Three adapter regression tests and six actual Chrome/WebKit GPU tests pass; the final native retest is reported in [MACOS-ACCEPTANCE.md](MACOS-ACCEPTANCE.md).
 
 ## Failures resolved during verification
 
 The first aggregate unit run returned 387 PASS / 2 FAIL during excessive concurrent browser workloads: a five-second IndexedDB fixture timeout and a transient iframe URL lookup. Vitest now uses two workers; the effects fixture selects the real iframe element. No timeout or rendering assertion was relaxed. Both focused files passed all 39 tests, then the complete current 389-test suite passed.
 
 Cold Jolt fixture builds initially tried resolving a Node-only module branch in a browser IIFE. Test fixture bundling now externalizes `node:*`, matching the browser's inactive Node branch; the actual WASM solver remains in the browser tests. A source-time regression discovered during review was corrected: a trimmed 3D scene retains its original source duration and offset through manual and automatic AI revision. The regression exercises interrupted output and a provider handoff.
+
+## GitHub runner verification
+
+The initial Linux CI run [42303576055](https://github.com/CartyChris/frame-short-films/actions/runs/42303576055) returned FAIL: 380 passed, 9 failed. Chromium render tests exceeded existing deadlines; two GPU cases took 106.7 and 69.6 seconds while corresponding WebKit cases completed in 5.7 and 2.7 seconds. Rust, Python, Jolt and Quarks gates passed. The runner did not record its original graphics backend, so a specific driver cause is not claimed. A CI-only explicit software-graphics configuration and renderer diagnostics are being checked without weakening test assertions or timeouts.
 
 ## What the new checks establish
 

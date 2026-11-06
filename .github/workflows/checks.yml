@@ -2,7 +2,9 @@ name: Verify Frame
 on:
   push:
     branches: [main]
+    paths-ignore: ['docs/**', 'README.md', 'START-HERE.md']
   pull_request:
+    paths-ignore: ['docs/**', 'README.md', 'START-HERE.md']
   workflow_dispatch:
 permissions:
   contents: read
@@ -28,8 +30,40 @@ jobs:
       - run: cargo test --manifest-path crates/film-storage/Cargo.toml --locked
       - run: cargo test --manifest-path companion/Cargo.toml --locked
       - run: npx playwright install --with-deps chromium webkit
-      - name: Select the installed browser
-        run: node -e 'require("node:fs").appendFileSync(process.env.GITHUB_ENV, "CHROME_PATH=" + require("playwright").chromium.executablePath() + "\n")'
+      - name: Select deterministic software rendering for Linux browser tests
+        run: |
+          node --input-type=module <<'NODE'
+          import {writeFileSync, appendFileSync} from 'node:fs';
+          import {join} from 'node:path';
+          import {chromium} from 'playwright';
+          const browserPath = chromium.executablePath();
+          const wrapperPath = join(process.env.RUNNER_TEMP, 'frame-test-chromium');
+          const quote = value => "'" + value.replaceAll("'", "'\"'\"'") + "'";
+          // Test runner only: trusted local fixtures, never the shipped browser/app.
+          // https://chromium.googlesource.com/chromium/src/+/HEAD/docs/gpu/swiftshader.md
+          writeFileSync(wrapperPath, '#!/bin/sh\nexec ' + quote(browserPath) + ' "$@" --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader\n', {mode: 0o755});
+          appendFileSync(process.env.GITHUB_ENV, 'CHROME_PATH=' + wrapperPath + '\n');
+          async function inspect(label, executablePath) {
+            const browser = await chromium.launch({executablePath, headless: true});
+            try {
+              const page = await browser.newPage();
+              const result = await page.evaluate(() => {
+                const gl = document.createElement('canvas').getContext('webgl2');
+                if (!gl) throw new Error('WebGL2 context unavailable');
+                const debug = gl.getExtension('WEBGL_debug_renderer_info');
+                gl.clearColor(1, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+                const pixel = new Uint8Array(4); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+                return {renderer: debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER), pixel: [...pixel]};
+              });
+              console.log(label + ': ' + JSON.stringify(result));
+              return result;
+            } finally { await browser.close(); }
+          }
+          try { await inspect('Default renderer diagnostic', browserPath); }
+          catch (error) { console.log('Default renderer diagnostic: ' + error.message); }
+          const selected = await inspect('Selected CI renderer', wrapperPath);
+          if (!/swiftshader/i.test(selected.renderer) || selected.pixel.join(',') !== '255,0,0,255') throw new Error('SwiftShader rendering probe failed');
+          NODE
       - run: python3 -m unittest discover -s scripts/production -p 'test_*.py'
       - run: python3 -m unittest discover -s integrations/tests -p 'test_*.py'
       - run: npm test

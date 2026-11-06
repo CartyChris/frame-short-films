@@ -1,6 +1,7 @@
 import * as T from 'three';
 import {GradientEquirectTexture,WebGLPathTracer} from 'three-gpu-pathtracer';
 import type {PathTracingSettings,PathTracingStatus} from './pathtracing-types';
+import {compatiblePathTracingShader} from './pathtracing-shader-compat';
 
 // This adapter deliberately pins the legacy WebGL backend. Keep its limited private
 // accesses here: deterministic PCG selection and resources omitted by upstream dispose.
@@ -15,6 +16,7 @@ export class PathTracingPass {
   this.oldShaderError=renderer.debug.onShaderError;
   renderer.debug.onShaderError=(gl,program,vertex,fragment)=>{this.shaderError='The GPU could not compile the path-tracing shader. '+(gl.getProgramInfoLog(program)||gl.getShaderInfoLog(fragment)||'Try the raster renderer on this device.').slice(0,700);this.oldShaderError?.(gl,program,vertex,fragment)};
   this.tracer=new WebGLPathTracer(renderer) as LegacyTracer;
+  for(const pass of [this.tracer._pathTracer,this.tracer._lowResPathTracer]){pass.material.fragmentShader=compatiblePathTracingShader(pass.material.fragmentShader);pass.material.needsUpdate=true}
   this.tracer.stableNoise=true;this.tracer.tiles.set(1,1);this.tracer.renderDelay=0;this.tracer.minSamples=0;this.tracer.fadeDuration=0;this.tracer.dynamicLowRes=false;this.tracer.rasterizeScene=false;this.tracer.renderToCanvas=false;this.tracer.textureSize.set(512,512);this.tracer.filterGlossyFactor=.4;
   // PCG consumes the explicit reset seed, without the random blue-noise texture used
   // by the default stratified mode. Never replace ambient Math.random.

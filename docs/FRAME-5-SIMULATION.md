@@ -20,7 +20,7 @@ A shot allows up to four emitters, 20 seconds of emission plus a lifetime tail o
 
 Film camera previews traced lighting; the editor camera stays rasterized for responsive object manipulation. Pause to refine the preview. Set final samples from 1–64, preview samples from 1–16, light bounces from 1–8, and resolution scale from 0.25–1. Higher settings take longer. Low sample counts can be visibly noisy.
 
-Frame pins three-gpu-pathtracer 0.0.28's legacy WebGL backend for compatibility with its existing Three renderer and Mac webview. The library's newer recommended API is WebGPU. This is actual GPU path tracing, not an NVIDIA RTX/CUDA integration. WebGL2 and floating-point render targets are required; unsupported capabilities or shaders produce visible errors.
+Frame pins three-gpu-pathtracer 0.0.28's legacy WebGL backend for compatibility with its existing Three renderer and Mac webview. The library's newer recommended API is WebGPU. This is actual GPU path tracing, not an NVIDIA RTX/CUDA integration. WebGL2 and floating-point render targets are required; unsupported capabilities or shaders produce visible errors. A narrow shader adapter avoids an out/inout compiler defect in macOS 27 beta WebKit without changing system settings.
 
 Meshes receive traced lighting. Fog is not a traced volume. Quarks and analytic particles are depth-composited over the result: they can be occluded by meshes, but do not cast traced light, shadows or reflections. Screen finishing remains available after composition.
 
