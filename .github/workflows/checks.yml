@@ -70,10 +70,10 @@ jobs:
           NODE
       - run: python3 -m unittest discover -s scripts/production -p 'test_*.py'
       - run: python3 -m unittest discover -s integrations/tests -p 'test_*.py'
-      # Run the film compositor in a fresh process after an unexplained browser
-      # closure on the hosted runner; retain the complete compositor check.
-      - run: npm test -- --maxWorkers=1 --exclude tests/film-transitions-browser.test.ts
+      # Exercise the compositor before other browser-heavy tests so that any
+      # runner resource exhaustion cannot mask its actual result.
       - run: npm test -- --maxWorkers=1 tests/film-transitions-browser.test.ts
+      - run: npm test -- --maxWorkers=1 --exclude tests/film-transitions-browser.test.ts
       - run: npm run build
       - uses: actions/upload-artifact@v7
         with:
