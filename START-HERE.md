@@ -1,6 +1,6 @@
-# Frame 6 — Short Films AI Harness
+# Frame 7 — Short Films AI Harness
 
-[Open the hosted studio](https://frame-short-films.vercel.app). The included source also runs locally and builds a macOS app. The source repository is [CartyChris/frame-short-films](https://github.com/CartyChris/frame-short-films). Release-specific deployment and installer checks are in [VERIFICATION.md](docs/VERIFICATION.md).
+[Open the hosted studio](https://frame-short-films.vercel.app). The included source also runs locally and builds a macOS app. The source repository is [CartyChris/frame-short-films](https://github.com/CartyChris/frame-short-films). Current workflows and integration boundaries are in [Frame 7 studio guide](docs/frame-7-studio.md).
 
 ## New simulation tools
 
@@ -35,12 +35,12 @@ Canonical models preserve their underlying identity. Image/video references and 
 
 ## Release files
 
-Frame 6 release packages use these names:
+Frame 7 release packages use these names:
 
-- `Frame-6-Short-Films-AI-Harness.zip` — source, Vercel configuration, native build code, local companion, integrations, documentation and included assets.
-- `Frame-6-macOS-Apple-Silicon.dmg` — the separate Apple Silicon installer. Check the release verification for its signing/notarization and runtime acceptance status.
-- `Frame-6-SHA256SUMS.txt` — checksums for the supplied release artifacts.
+- `Frame-7-source-macOS-and-Vercel.zip` — source, Vercel configuration, native build code, local companion, integrations, documentation and included assets.
+- `Frame-7.0.0-Apple-Silicon.dmg` — the separate Apple Silicon installer. Check the release verification for its signing/notarization and runtime acceptance status.
+- `Frame-7-SHA256.txt` — checksums for the supplied release artifacts.
 
-Use the release folder's example HTML/project/video files as named there. Prior Frame releases remain separate; do not mistake an older installer for this release. [README.md](README.md) contains complete setup, provider, export and format details. [VERIFICATION.md](docs/VERIFICATION.md) records the exact current **PASS**, **FAIL** and **NOT RUN** results, including paid-account and physical-device boundaries.
+Use the release folder's example HTML/project/video files as named there. Prior Frame releases remain separate; do not mistake an older installer for this release. [README.md](README.md) contains complete setup, provider, export and format details. The [Frame 7 studio guide](docs/frame-7-studio.md) explains which connections require separate services and what is not yet implemented.
 
 For iPhone/iPad, open the hosted app in Safari and use **Share → Add to Home Screen**. Scroll the workspace tabs to reach all studios. Landscape provides more editing space. HTML playback and audio depend on the target viewer's browser engine and autoplay rules.
