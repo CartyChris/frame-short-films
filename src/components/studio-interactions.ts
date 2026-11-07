@@ -68,6 +68,11 @@ export function resolveQuickMenu(root:HTMLElement,target:Element):QuickMenu|unde
   buttonAction('New 3D shot',matchButton(root.querySelector('.s3-library footer')||root,'New 3D shot')),
   ...navigate(root,['Film']),
  ])};
+ if(target.closest('.director-chat')){const composer=root.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message your director"]');return {title:'Chat',actions:compact([
+  composer&&!composer.disabled?{label:'Write a message',description:'Move the cursor to the film brief.',run:()=>{if(composer.isConnected&&!composer.disabled)composer.focus()}}:undefined,
+  buttonAction('Attach files',root.querySelector<HTMLButtonElement>('button[aria-label="Attach files"]'),'Add files to this film conversation.'),
+  ...navigate(root,['Produce','Film']),
+ ])}}
  const areas:[string,string,string[]][]=[['.director-chat','Chat',['Produce','Film']],['.production-studio','Production',['Chat','Film','3D studio']],['.casting-studio','Casting',['Chat','3D studio','Film']],['.sound-studio','Sound & music',['Film','Chat']],['.motion-studio','Motion',['Film','3D studio']],['.story-studio','Story & cast',['Chat','Film']],['.integrations-studio','Studios',['Produce','Film']]];
  for(const [selector,title,names] of areas)if(target.closest(selector))return {title,actions:compact(navigate(root,names))};
  if(target.closest('.preview-canvas'))return {title:'Film preview',actions:compact([buttonAction('Play / pause',root.querySelector<HTMLButtonElement>('button[aria-label="Play film"],button[aria-label="Pause film"]')),buttonAction('Export film',matchButton(root,'Export film'))])};
@@ -83,6 +88,18 @@ const descriptions:Record<string,string>={
  'Save a portable backup':'Export this film, saved drafts, and the entire shared media library.',
  'Remove scene':'Remove this scene from the timeline. You can undo the edit.', 'New 3D shot':'Add an editable 3D shot.',
  'Produce this film':'Start the reviewed plan with the selected connected model.',
+ 'Chat':'Describe your film, attach references, and review its shot plan.',
+ 'Produce':'Choose production roles and run the film plan.',
+ 'Film':'Edit scenes, layers, timing, and the finished film.',
+ 'Casting':'Create and manage reusable characters and their references.',
+ 'Sound & music':'Create, import, and edit audio for your film.',
+ 'Motion':'Create and edit animated graphics for a shot.',
+ '3D studio':'Arrange and animate 3D objects, cameras, and lighting.',
+ 'Story & cast':'Manage the story, recurring cast, places, and continuity.',
+ 'Studios':'Connect external creative tools and workflows.',
+ 'Attach files':'Save files to this film and include them in your message.',
+ 'Send director message':'Send your message and selected attachments to the chosen director.',
+ 'Stop and save director reply':'Stop generation and keep the response received so far.',
 };
 export function buttonHelp(button:HTMLElement):{label:string;description?:string}{
  let label=text(button);if(!label){const icon=button.querySelector('svg')?.getAttribute('class')||'';const map:Record<string,string>={'lucide-plus':'Add','lucide-trash-2':'Remove','lucide-x':'Close','lucide-search':'Search','lucide-settings-2':'Settings','lucide-play':'Play','lucide-pause':'Pause','lucide-download':'Download','lucide-upload':'Upload','lucide-copy':'Duplicate'};label=Object.entries(map).find(([name])=>icon.split(/\s+/).includes(name))?.[1]||'Action'}
