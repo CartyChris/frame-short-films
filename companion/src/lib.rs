@@ -24,6 +24,7 @@ use tokio::{
 };
 use tokio_stream::wrappers::ReceiverStream;
 mod cli;
+mod freefield;
 mod integrations;
 mod production_tools;
 
@@ -35,6 +36,7 @@ pub struct AppState {
     integrations: Arc<integrations::Hub>,
     cli: Arc<cli::Registry>,
     production_tools: Arc<production_tools::Hub>,
+    freefield: Arc<freefield::Hub>,
 }
 impl AppState {
     pub fn new(token: String, origins: HashSet<String>) -> Self {
@@ -45,6 +47,7 @@ impl AppState {
             integrations: Arc::new(integrations::Hub::default()),
             cli: Arc::new(cli::Registry::default()),
             production_tools: Arc::new(production_tools::Hub::default()),
+            freefield: Arc::new(freefield::Hub::default()),
         }
     }
 }
@@ -79,6 +82,12 @@ pub fn router(state: AppState) -> Router {
         .route("/production/comfy/submit", post(production_tools::submit))
         .route("/production/comfy/poll", post(production_tools::poll))
         .route("/production/comfy/download", post(production_tools::download))
+        .route("/production/freefield/discover", post(freefield::discover))
+        .route("/production/freefield/submit", post(freefield::submit).layer(DefaultBodyLimit::max(105 * 1024 * 1024)))
+        .route("/production/freefield/receipt", post(freefield::receipt))
+        .route("/production/freefield/poll", post(freefield::poll))
+        .route("/production/freefield/download", post(freefield::download))
+        .route("/production/freefield/cancel", post(freefield::cancel))
         .layer(DefaultBodyLimit::max(4 * 1024 * 1024))
         .layer(middleware::from_fn_with_state(state.clone(), guard))
         .with_state(state)
