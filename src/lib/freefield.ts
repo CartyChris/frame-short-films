@@ -5,8 +5,10 @@ export type FreefieldValues=Record<string,FreefieldValue>;
 export type FreefieldInput={id:string;type:'text'|'textarea'|'number'|'slider'|'select'|'toggle'|'seed'|'image'|'video'|'audio';label:string;help?:string;required:boolean;default?:FreefieldScalar|FreefieldScalar[];min?:number;max?:number;step?:number;multiple?:{max:number};options:{value:FreefieldScalar;label:string}[];maxMb:number};
 export type FreefieldApp={id:string;name:string;section:'image'|'video'|'audio'|'utility';summary:string;status:'ready'|'draft';runnable:boolean;inputs:FreefieldInput[];outputs:{type:'image'|'video'|'audio';label:string}[];presets:{id:string;label:string}[];models:{name:string;license:string;gated:boolean;optional:boolean;gb?:number}[];credits:string[]};
 export type FreefieldOutput={id:string;name:string;type:'image'|'video'|'audio'};
-export type FreefieldJob={id:string;appId:string;status:'starting'|'queued'|'running'|'succeeded'|'failed'|'canceled'|'expired'|'lost'|'unknown';outputs:FreefieldOutput[];error?:string};
+/** Local request identities are never treated as Freefield server history IDs. */
+export type FreefieldJob={id:string;identity:'local'|'server';appId:string;status:'starting'|'queued'|'running'|'succeeded'|'failed'|'canceled'|'expired'|'lost'|'unknown';outputs:FreefieldOutput[];error?:string;acknowledged?:boolean};
 export type FreefieldSubmit={requestId:string;appId:string;values:FreefieldValues;preset?:string};
+export function unresolvedFreefieldRequest(job?:FreefieldJob){return !!job&&job.identity==='local'&&(job.status==='starting'||job.status==='unknown')&&!job.acknowledged}
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 const scalar=(v:unknown):v is FreefieldScalar=>typeof v==='string'||typeof v==='boolean'||typeof v==='number'&&Number.isFinite(v);
 const text=(v:unknown,max:number)=>typeof v==='string'?v.slice(0,max):'';

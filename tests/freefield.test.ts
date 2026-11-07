@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {freefieldDefaults,parseFreefieldCatalog,validateFreefieldValues} from '../src/lib/freefield';
+import {freefieldDefaults,parseFreefieldCatalog,unresolvedFreefieldRequest,validateFreefieldValues} from '../src/lib/freefield';
 
 const fixture={id:'sound-effects',name:'Sound effects',section:'audio',status:'ready',runnable:true,summary:'Create audio',inputs:[
  {id:'prompt',type:'textarea',label:'Description',required:true,default:'rain'},
@@ -28,5 +28,12 @@ describe('Freefield catalog and inputs',()=>{
  });
  it('never treats a raw manifest without a runtime runnable flag as ready to run',()=>{
   const {runnable,...manifest}=fixture;expect(runnable).toBe(true);expect(parseFreefieldCatalog({apps:[manifest]}).apps[0].runnable).toBe(false);
+ });
+ it('blocks restored local requests until explicit acknowledgement, but accepts server IDs',()=>{
+  const starting={id:'local-request',identity:'local' as const,appId:'sound-effects',status:'starting' as const,outputs:[]};
+  expect(unresolvedFreefieldRequest(starting)).toBe(true);
+  expect(unresolvedFreefieldRequest({...starting,status:'unknown'})).toBe(true);
+  expect(unresolvedFreefieldRequest({...starting,status:'unknown',acknowledged:true})).toBe(false);
+  expect(unresolvedFreefieldRequest({...starting,identity:'server'})).toBe(false);
  });
 });
