@@ -71,3 +71,7 @@
 .production-role-skills > label { display: grid; gap: 6px; margin: 12px 0; }
 .production-role-skills textarea { width: 100%; resize: vertical; }
 .production-role-skills input[type="file"] { max-width: 100%; margin-left: 8px; font-size: 11px; }
+/* Keep the production mode readable beside the model selector. */
+.director-mode { flex: 0 0 auto; }
+.director-mode select { width: auto; min-width: 118px; }
+@media (max-width: 700px) { .director-mode select { min-width: 112px; } }
