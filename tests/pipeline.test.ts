@@ -84,3 +84,12 @@ it('does not replace a scene edited while the pre-assembly backup is being writt
  vi.spyOn(Store,'addRevision').mockImplementation(async(projectId,sceneId,code,title,scene)=>{backedUp=true;h.set({...h.get(),scenes:h.get().scenes.map(s=>({...s,code:'<html>A newer user edit</html>'}))});return {id:uid(),projectId,sceneId,code,title,scene,createdAt:0}});
  await expect(h.run()).rejects.toThrow('film changed while its previous scenes were being saved');expect(backedUp).toBe(true);expect(h.get().scenes[0].code).toBe('<html>A newer user edit</html>');
 });
+
+it('routes each production step to its assigned role and includes the role instructions',async()=>{
+ vi.stubGlobal('localStorage',{getItem:()=>null});
+ const h=harness(project(),{roleConnections:{director:'director-model',designer:'designer-model',animator:'animator-model'},roleSkills:{director:'Keep the star blue.',designer:'Use rounded silhouettes.',animator:'Use gentle camera movement.'}});
+ const requests=mockProduction(h),used:string[]=[];
+ await runPipeline({projectId:h.get().id,pipelineId:h.get().pipelines![0].id,getProject:h.get,commit:async fn=>{const next=fn(h.get());h.set(next);await Store.saveProject(next);return next},connection:role=>{used.push(role);return provider(role)},mediaConnection:()=>provider(),signal:new AbortController().signal});
+ expect(used).toContain('director');expect(used).toContain('designer');expect(used).toContain('animator');
+ const text=JSON.stringify(requests);expect(text).toContain('Keep the star blue.');expect(text).toContain('Use rounded silhouettes.');expect(text).toContain('Use gentle camera movement.');
+});
