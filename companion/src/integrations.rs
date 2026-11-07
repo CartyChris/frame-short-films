@@ -784,12 +784,10 @@ for line in sys.stdin:
     else: result={}
     print(json.dumps({'jsonrpc':'2.0','id':msg['id'],'result':result}),flush=True)
 "#).unwrap();
-        let python_target = std::fs::canonicalize("/usr/bin/python3").unwrap();
-        let python = temp.path().join("venv-python");
-        #[cfg(unix)]
-        std::os::unix::fs::symlink(&python_target, &python).unwrap();
-        #[cfg(not(unix))]
-        let python = python_target.clone();
+        let venv=temp.path().join("venv");
+        let setup=std::process::Command::new("/usr/bin/python3").args(["-m","venv","--without-pip"]).arg(&venv).status().unwrap();
+        assert!(setup.success());
+        let python=venv.join("bin/python3");
         let mut state = AppState::new("fixture-token".into(), super::super::default_origins());
         state.integrations = Arc::new(Hub {
             sessions: Mutex::new(HashMap::new()),
@@ -836,10 +834,10 @@ for line in sys.stdin:
             ))
             .await
             .unwrap();
-        assert_eq!(connected.status(), StatusCode::OK);
-        let value: Value =
-            serde_json::from_slice(&to_bytes(connected.into_body(), MAX_RESPONSE).await.unwrap())
-                .unwrap();
+        let status=connected.status();
+        let bytes=to_bytes(connected.into_body(),MAX_RESPONSE).await.unwrap();
+        assert_eq!(status,StatusCode::OK,"{}",String::from_utf8_lossy(&bytes));
+        let value: Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(value["tools"][0]["name"], "pose");
         assert_eq!(value["serverFingerprint"].as_str().unwrap().len(), 64);
         let id = value["connectionId"].as_str().unwrap();
