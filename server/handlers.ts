@@ -3,6 +3,8 @@ import { once } from 'node:events';
 import { ApiError } from './network.js';
 import { consumeGeneration } from './stream.js';
 import { generationResponse, listModels, media, validateGenerate, voice } from './providers.js';
+import comfyCloudHandler from '../api/comfy.js';
+import higgsfieldHandler from '../api/higgsfield.js';
 const MAX_BODY=2_000_000;
 const DESKTOP_ORIGINS=['tauri://localhost','http://tauri.localhost','https://tauri.localhost'];
 function allowedOrigins(){
@@ -43,6 +45,9 @@ async function readBody(req:IncomingMessage):Promise<Record<string,any>>{
 }
 function json(res:ServerResponse,value:unknown,status=200){res.statusCode=status;res.setHeader('Content-Type','application/json; charset=utf-8');res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.end(JSON.stringify(value));}
 export async function handleApi(req:IncomingMessage,res:ServerResponse):Promise<void>{
+ const path=new URL(req.url||'/', 'http://localhost').pathname.replace(/\/$/,'');
+ if(path==='/api/comfy')return comfyCloudHandler(req,res);
+ if(path==='/api/higgsfield')return higgsfieldHandler(req,res);
  if(cors(req,res))return;
  if(req.method!=='POST'){res.setHeader('Allow','POST, OPTIONS');json(res,{error:'Use POST for provider requests.'},405);return;}
  const controller=new AbortController();const disconnect=()=>{if(!res.writableEnded)controller.abort();};res.on('close',disconnect);const timeout=setTimeout(()=>controller.abort(new Error('The hosted request reached its time limit. Received code is preserved.')),285_000);let secret='';
