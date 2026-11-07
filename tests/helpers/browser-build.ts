@@ -10,5 +10,5 @@ const require=createRequire(import.meta.url);
 export function build<T extends BuildOptions>(options:T):Promise<BuildResult<T>>{
  // Use real single-file distributions to avoid traversing thousands of small
  // icon/audio modules for every browser fixture. Caller aliases still win.
- return esbuild({...options,alias:{'lucide-react':require.resolve('lucide-react'),'standardized-audio-context':require.resolve('standardized-audio-context'),...options.alias},external:['node:*',...(options.external||[])]} as T);
+ return esbuild({...options,loader:{'.py':'text','.md':'text',...options.loader},alias:{'lucide-react':require.resolve('lucide-react'),'standardized-audio-context':require.resolve('standardized-audio-context'),...options.alias},external:['node:*',...(options.external||[])]} as T);
 }
