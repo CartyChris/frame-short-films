@@ -7,13 +7,17 @@ export function text(value:unknown,name:string,max=1000,optional=false):string{i
 export function base(provider:string,baseUrl?:string){if(provider==='custom'){if(!baseUrl)throw new ApiError('A custom provider needs its public HTTPS API base URL.');return validateCustomUrl(baseUrl).toString().replace(/\/$/,'');}if(!BASES[provider])throw new ApiError('Select a supported API provider. Signed-in coding tools connect through the local companion.');return BASES[provider];}
 export function headers(provider:string,key:string){return {'Content-Type':'application/json',...(key?{Authorization:`Bearer ${key}`}:{ }),...(provider==='anthropic'?{'anthropic-version':'2026-10-21'}:{})};}
 function number(value:unknown,fallback:number,min:number,max:number){if(value===undefined)return fallback;if(typeof value!=='number'||!Number.isFinite(value)||value<min||value>max)throw new ApiError(`Number must be between ${min} and ${max}.`);return value;}
+/** The only binary chat inputs accepted here are explicit, bounded local image data for OpenRouter. */
+function validateChatImages(value:unknown,provider:string,messages:{role:string;content:string}[]):NonNullable<GenerateRequest['images']>{
+ if(value===undefined)return [];if(!Array.isArray(value)||value.length>3||(value.length>0&&provider!=='openrouter'))throw new ApiError('Image sharing is available only with OpenRouter, up to three images.');let total=0;return value.map(item=>{if(!item||typeof item!=='object'||Array.isArray(item)||Object.keys(item).some(k=>!['messageIndex','dataUrl'].includes(k))||!Number.isInteger(item.messageIndex)||item.messageIndex<0||item.messageIndex>=messages.length||messages[item.messageIndex].role!=='user'||typeof item.dataUrl!=='string'||item.dataUrl.length>1_048_600)throw new ApiError('Invalid shared image selection.');const match=/^data:(image\/png|image\/jpeg|image\/webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(item.dataUrl);if(!match||match[2].length%4!==0)throw new ApiError('Only PNG, JPEG, or WebP image data is supported.');const bytes=Buffer.from(match[2],'base64');if(bytes.toString('base64')!==match[2])throw new ApiError('Invalid image encoding.');total+=bytes.length;if(total>750*1024)throw new ApiError('Shared images must total at most 750 KiB.',413);const mime=match[1],png=bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])),jpg=bytes.length>=3&&bytes[0]===255&&bytes[1]===216&&bytes[2]===255,webp=bytes.length>=12&&bytes.subarray(0,4).toString()==='RIFF'&&bytes.subarray(8,12).toString()==='WEBP';if(!((mime==='image/png'&&png)||(mime==='image/jpeg'&&jpg)||(mime==='image/webp'&&webp)))throw new ApiError('A shared image does not match its declared type.');return {messageIndex:item.messageIndex,dataUrl:item.dataUrl};});
+}
 export function validateGenerate(input:unknown):GenerateRequest{
  const b=input as GenerateRequest;if(!b||typeof b!=='object')throw new ApiError('Expected a generation request.');
  const provider=text(b.provider,'Provider',40),apiKey=text(b.apiKey,'API key',8192),model=text(b.model,'Model',300);base(provider,b.baseUrl);
  if(!Array.isArray(b.messages)||!b.messages.length||b.messages.length>100)throw new ApiError('Provide between 1 and 100 messages.');
  let size=0;const messages=b.messages.map(m=>{if(!m||!['user','assistant','system','developer'].includes(m.role)||typeof m.content!=='string')throw new ApiError('Messages must contain a supported role and text content.');size+=m.content.length;return {role:m.role,content:m.content};});
- if(size>1_800_000)throw new ApiError('This context is too large for one request. Generate or continue one scene at a time.',413);
- return {provider,apiKey,model,baseUrl:b.baseUrl,messages,temperature:number(b.temperature,.7,0,2),maxTokens:Math.round(number(b.maxTokens,8192,1,262144))};
+ const images=validateChatImages(b.images,provider,messages);size+=images.reduce((n,i)=>n+i.dataUrl.length,0);if(size>1_800_000)throw new ApiError('This context is too large for one request. Generate or continue one scene at a time.',413);
+ return {provider,apiKey,model,baseUrl:b.baseUrl,messages,...(images.length?{images}:{}),temperature:number(b.temperature,.7,0,2),maxTokens:Math.round(number(b.maxTokens,8192,1,262144))};
 }
 export async function generationResponse(input:GenerateRequest,signal?:AbortSignal):Promise<Response>{
  const provider=input.provider;const root=base(provider,input.baseUrl);let body:Record<string,unknown>;
@@ -21,7 +25,8 @@ export async function generationResponse(input:GenerateRequest,signal?:AbortSign
    body={model:input.model,max_tokens:input.maxTokens,stream:true,messages:input.messages.filter(m=>m.role==='user'||m.role==='assistant'),system:input.messages.filter(m=>m.role==='system'||m.role==='developer').map(m=>m.content).join('\n\n')};
    // Sampling controls are model-dependent; omit for broad compatibility.
  }else{
-   body={model:input.model,messages:input.messages,stream:true,...(provider==='openai'?{max_completion_tokens:input.maxTokens}:{max_tokens:input.maxTokens})};
+   const messages=input.images?.length?input.messages.map((m,index)=>{const selected=input.images!.filter(image=>image.messageIndex===index);return selected.length?{role:m.role,content:[{type:'text',text:m.content},...selected.map(image=>({type:'image_url',image_url:{url:image.dataUrl}}))]}:m}):input.messages;
+   body={model:input.model,messages,stream:true,...(provider==='openai'?{max_completion_tokens:input.maxTokens}:{max_tokens:input.maxTokens})};
    if(provider!=='openai'&&provider!=='moonshot')body.temperature=input.temperature;
  }
  const response=await requireOk(await upstream(root+(provider==='anthropic'?'/messages':'/chat/completions'),{method:'POST',headers:headers(provider,input.apiKey),body:JSON.stringify(body),signal},provider==='custom'),input.apiKey);

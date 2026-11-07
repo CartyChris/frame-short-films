@@ -23,5 +23,5 @@ export interface Chunk {runId:string;seq:number;text:string;createdAt:number}
 export interface Revision {id:string;projectId:string;sceneId:string;code:string;title:string;createdAt:number;scene?:Scene}
 export interface MediaJob {id:string;projectId:string;sceneId:string;provider:string;model:string;kind:'image'|'video';prompt:string;status:string;remoteId?:string;downloadUrl?:string;createdAt:number;error?:string;queueId?:string;queueItemId?:string;assetId?:string}
 export type StreamEvent={type:'delta';text:string}|{type:'done';finishReason:string}|{type:'error';message:string};
-export interface GenerateRequest {provider:string;apiKey:string;baseUrl?:string;model:string;messages:{role:string;content:string}[];temperature?:number;maxTokens?:number}
+export interface GenerateRequest {provider:string;apiKey:string;baseUrl?:string;model:string;messages:{role:string;content:string}[];images?:{messageIndex:number;dataUrl:string}[];temperature?:number;maxTokens?:number}
 export interface MediaRequest {action:'image'|'video-start'|'video-poll'|'video-content';provider:string;apiKey:string;model:string;prompt?:string;jobId?:string;downloadUrl?:string;aspectRatio?:string;duration?:number;resolution?:string;width?:number;height?:number;referenceImages?:string[];referenceMode?:'reference'|'first-frame'|'first-last-frame'}
