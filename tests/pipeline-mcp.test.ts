@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
-import {createPipeline,validatePipeline,parseProductionMcpDecision,productionMcpRequestId,recoverPipelines,runPipeline,taskList} from '../src/lib/pipeline';
+import {createPipeline,validatePipeline,parseProductionMcpDecision,productionMcpRequestId,recoverPipelines,runPipeline,taskList,mcpResultText} from '../src/lib/pipeline';
 import {setMcpSession} from '../src/lib/mcp-session';
 import {createMcpJournal} from '../src/lib/mcp-journal';
 import * as Store from '../src/lib/storage';
@@ -27,5 +27,33 @@ describe('opt-in production MCP tools',()=>{
  it('refuses a changed server or permissions before any tool call',async()=>{const h=fixture();let calls=0;vi.spyOn(globalThis,'fetch').mockImplementation(async url=>{if(String(url).includes('/api/generate')){setMcpSession({projectId:h.get().id,serverFingerprint:'b'.repeat(64),companion:{url:'http://127.0.0.1:4319',token:'fixture-token'},connection:{connectionId:'other',status:'connected',serverInfo:{},tools:[tool]}});return response('{"action":"call","name":"scene_info","arguments":{}}')}calls++;throw new Error('unexpected call')});await expect(h.run()).rejects.toThrow(/server/);expect(calls).toBe(0)});
  it('keeps an aborted in-flight call unknown and does not replay it',async()=>{const h=fixture(),controller=new AbortController();let calls=0,started!:()=>void;const dispatched=new Promise<void>(resolve=>{started=resolve});vi.spyOn(globalThis,'fetch').mockImplementation(async(url,init)=>{if(String(url).includes('/api/generate'))return response('{"action":"call","name":"scene_info","arguments":{}}');calls++;started();return new Promise<Response>((_,reject)=>{const signal=init?.signal;if(signal?.aborted)reject(new DOMException('Aborted','AbortError'));else signal?.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError')),{once:true})})});const work=h.run(controller.signal);await dispatched;controller.abort();await expect(work).rejects.toThrow();const requestId=h.get().pipelines![0].tasks[0].mcpRequestId!,journal=createMcpJournal();expect((await journal.get(requestId))?.state).toBe('unknown');await journal.close();await expect(h.run()).rejects.toThrow('already has a saved request');expect(calls).toBe(1)});
  it('rejects a modified allowed tool definition before dispatch',async()=>{const h=fixture();let calls=0;vi.spyOn(globalThis,'fetch').mockImplementation(async url=>{if(String(url).includes('/api/generate')){setMcpSession({projectId:h.get().id,serverFingerprint:fingerprint,companion:{url:'http://127.0.0.1:4319',token:'fixture-token'},connection:{connectionId:'session',status:'connected',serverInfo:{},tools:[{...tool,inputSchema:{type:'object',properties:{changed:{type:'boolean'}}}}]}});return response('{"action":"call","name":"scene_info","arguments":{}}')}calls++;throw new Error('unexpected call')});await expect(h.run()).rejects.toThrow(/allowed tools changed/);expect(calls).toBe(0)});
+ it('sequences scene tools using bounded prior results and never dispatches a completed step twice',async()=>{
+  const h=fixture(),p=h.get(),job=p.pipelines![0];job.settings.mcp!.mode='per-scene';job.tasks=[];let calls=0;const prompts:any[]=[];
+  vi.spyOn(globalThis,'fetch').mockImplementation(async(url,init)=>{
+   if(String(url).includes('/api/generate')){const body=JSON.parse(String(init?.body)),context=JSON.parse(body.messages[1].content);prompts.push(context);return response(context.stage==='inspect'||context.stage==='animate'?JSON.stringify({action:'call',name:'scene_info',arguments:{detail:context.stage}}):'{"action":"skip"}')}
+   const body=JSON.parse(String(init?.body));calls++;return Response.json({requestId:body.requestId,result:{content:[{type:'text',text:body.arguments.detail==='inspect'?'Rig has a hand controller.':'Pose applied.'},{type:'image',data:'not-model-text'}]}})
+  });
+  await h.run();expect(calls).toBe(2);expect(h.get().pipelines![0].state).toBe('complete');
+  expect(h.get().pipelines![0].tasks.filter(t=>t.mcpStage).map(t=>t.mcpStage)).toEqual(['inspect','animate','review']);
+  expect(prompts.find(p=>p.stage==='animate').untrustedPreviousResults[0].text).toContain('hand controller');
+  expect(prompts.find(p=>p.stage==='review').untrustedPreviousResults.map((v:any)=>v.text)).toContain('Pose applied.');
+  await h.run();expect(calls).toBe(2);expect(mcpResultText({content:[{type:'image',data:'private'},{type:'text',text:'x'.repeat(5000)}]})).toHaveLength(4000);
+ });
+ it('recovers a completed scene-tool result from its receipt without replaying the call',async()=>{
+  const h=fixture(),p=h.get(),job=p.pipelines![0];job.settings.mcp!.mode='per-scene';job.tasks[0]={...job.tasks[0],targetId:p.production![0].items[0].id,mcpStage:'inspect'};
+  let calls=0,receipts=0,failed=false;
+  vi.spyOn(globalThis,'fetch').mockImplementation(async(url,init)=>{
+   if(String(url).includes('/api/generate'))return response('{"action":"call","name":"scene_info","arguments":{}}');
+   if(String(url).includes('/receipt')){receipts++;const body=JSON.parse(String(init?.body));return Response.json({requestId:body.requestId,status:'succeeded',tool:'scene_info',result:{content:[{type:'text',text:'saved result'}]}})}
+   calls++;const body=JSON.parse(String(init?.body));return Response.json({requestId:body.requestId,result:{content:[{type:'text',text:'saved result'}]}})
+  });
+  await expect(runPipeline({projectId:p.id,pipelineId:job.id,getProject:h.get,commit:async fn=>{const next=fn(h.get());if(!failed&&next.pipelines![0].tasks[0].resultText){failed=true;throw new Error('Simulated close before result checkpoint')}h.set(next);await Store.saveProject(next);return next},connection:()=>provider,mediaConnection:()=>provider,signal:new AbortController().signal})).rejects.toThrow('Simulated close');
+  await h.run();expect(calls).toBe(1);expect(receipts).toBe(1);expect(h.get().pipelines![0].tasks[0].resultText).toBe('saved result');
+ });
+ it('remaps per-scene tool targets in a project backup and disables the grant',async()=>{
+  const h=fixture(),p=h.get(),job=p.pipelines![0];job.settings.mcp!.mode='per-scene';job.tasks[0]={...job.tasks[0],targetId:p.production![0].items[0].id,mcpStage:'inspect'};
+  const restored=await Store.importArchive(await Store.createArchive(p));const newJob=restored.pipelines![0];
+  expect(newJob.tasks[0].targetId).toBe(restored.production![0].items[0].id);expect(newJob.settings.mcp).toMatchObject({enabled:false,mode:'per-scene',tools:[]});
+ });
  it('adds the stage only with an explicit grant',()=>{const h=fixture(),p=h.get(),job=h.job;expect(taskList(p,job).some(t=>t.kind==='mcp')).toBe(true);job.settings.mcp={enabled:false,serverFingerprint:'',tools:[]};expect(()=>validatePipeline(job)).not.toThrow();expect(taskList(p,job).some(t=>t.kind==='mcp')).toBe(false);job.settings.mcp.enabled=true;expect(()=>validatePipeline(job)).toThrow(/permissions/)});
 });
