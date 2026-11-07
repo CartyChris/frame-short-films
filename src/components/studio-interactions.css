@@ -1,0 +1,8 @@
+.frame-button-help,.frame-quick-menu{position:fixed;z-index:10000;color:var(--text,#ecebea);background:var(--panel,#18191c);background:color-mix(in srgb,var(--panel,#18191c) 90%,transparent);border:1px solid var(--line-strong,#454548);box-shadow:0 12px 36px #0008;border-radius:9px}
+.frame-button-help{max-width:240px;padding:8px 10px;pointer-events:none;font-size:11px;line-height:1.4}
+.frame-button-help strong,.frame-button-help span{display:block}.frame-button-help span{color:var(--muted,#b2b2b7);margin-top:3px}
+.frame-quick-menu{min-width:194px;max-width:min(300px,calc(100vw - 16px));padding:5px;max-height:calc(100vh - 16px);overflow:auto;backdrop-filter:blur(16px)}
+.frame-quick-menu-title{padding:7px 9px;color:var(--muted,#aaa);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.frame-quick-menu button{display:block;width:100%;padding:8px 9px;border:0;border-radius:6px;background:transparent;color:inherit;text-align:left;font:inherit;font-size:11px;cursor:pointer}
+.frame-quick-menu button:hover,.frame-quick-menu button:focus-visible{background:var(--hover,#ffffff16);outline:1px solid var(--accent,#bda282)}
+.frame-quick-menu button strong,.frame-quick-menu button small{display:block}.frame-quick-menu button strong{font-weight:500}.frame-quick-menu button small{color:var(--muted,#aaa);margin-top:3px;font-size:10px;line-height:1.35}.frame-quick-menu button:disabled{opacity:.45;cursor:default}

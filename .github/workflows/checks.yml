@@ -14,7 +14,9 @@ concurrency:
 jobs:
   web-and-core:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Hosted runner package mirrors can be slow; retain both browser suites and
+    # leave enough time for their system dependencies and the actual checks.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -29,7 +31,9 @@ jobs:
       - run: cargo test --manifest-path crates/film-core/Cargo.toml --locked
       - run: cargo test --manifest-path crates/film-storage/Cargo.toml --locked
       - run: cargo test --manifest-path companion/Cargo.toml --locked
-      - run: npx playwright install --with-deps chromium webkit
+      - name: Install Chromium and WebKit dependencies
+        timeout-minutes: 40
+        run: npx playwright install --with-deps chromium webkit
       - name: Select deterministic software rendering for Linux browser tests
         run: |
           node --input-type=module <<'NODE'

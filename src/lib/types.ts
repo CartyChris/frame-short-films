@@ -10,6 +10,8 @@ import type {PipelineRun} from './pipeline-types';
 export type Theme = 'noir'|'paper'|'aurora'|'cosmos';
 export type AssetKind = 'image'|'video'|'audio';
 export interface Asset {id:string;name:string;kind:AssetKind;mime:string;data:string;createdAt:number;duration?:number;source?:string}
+/** Original uploaded bytes remain project-scoped and are never evaluated automatically. */
+export interface FilmAttachment {id:string;projectId:string;name:string;mime:string;size:number;createdAt:number;data:Blob;assetId?:string}
 export interface Layer {id:string;assetId:string;name:string;type:AssetKind|'text';text?:string;start:number;duration:number;x:number;y:number;width:number;opacity:number;rotation:number;blend:string;volume:number;muted:boolean;loop:boolean;fadeIn:number;fadeOut:number;trim:number;envelopeOffset?:number;envelopeDuration?:number}
 export interface Scene {id:string;title:string;duration:number;code:string;notes:string;transition:'cut'|'dissolve'|'fade';color:string;layers:Layer[];template?:string;sourceOffset?:number;three?:ThreeDocument;motion?:MotionDocument;cast?:CastScene;continuity?:SceneContinuity}
 export interface Project {id:string;name:string;createdAt:number;updatedAt:number;scenes:Scene[];audio:Layer[];settings:{width:number;height:number;fps:number;background:string;volume:number};brief:string;models?:ModelAsset[];hiddenModelIds?:string[];story?:StoryBible;production?:ProductionQueue[];integrationJobs?:IntegrationJob[];productionTools?:ProductionToolsDocument;sceneAliases?:Record<string,string>;assetAliases?:Record<string,string>;chat?:DirectorChat;castDesigns?:Record<string,CharacterDesign>;soundtrack?:SoundtrackDocument;pipelines?:PipelineRun[]}

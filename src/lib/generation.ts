@@ -1,3 +1,4 @@
+import {projectAttachmentContext} from './chat-attachments';
 import {threeRevisionTiming,threeForAgent} from './three-revision';
 import {PHYSICS_AGENT_SCHEMA} from './three/physics-types';
 import {PATH_TRACING_AGENT_SCHEMA} from './three/pathtracing-types';
@@ -63,6 +64,7 @@ export function makeMessages(project:Project,scene:Scene,prompt:string,base:stri
   }
   messages=[{role:'system',content:system},{role:'user',content:`${continuityPrompt(project,scene)}\n\nCreative brief: ${project.brief}\nScene notes: ${scene.notes}\nUser direction: ${prompt}${base?'':current}`}];
  }
+ const attachmentData=projectAttachmentContext(project);if(attachmentData)messages.push({role:'user',content:attachmentData});
  if(base)messages.push({role:'assistant',content:base.slice(-100000)},{role:'user',content:`Continue from the EXACT next character after this saved ${format==='html'?'HTML':'JSON'} draft. Output only missing text. Do not restart, repeat a preamble, or add markdown fences. The entire original prefix remains saved.`});
  return messages;
 }

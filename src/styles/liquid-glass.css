@@ -1,0 +1,73 @@
+/* Translucent surfaces use the existing theme tokens, so all studio themes stay available. */
+@supports (background: color-mix(in srgb, black 50%, transparent)) {
+  .app .topbar, .app .workspace-tabs, .app .tool-rail,
+  .app .inspector, .app .timeline {
+    background: color-mix(in srgb, var(--panel) 91%, transparent);
+    backdrop-filter: blur(22px) saturate(125%);
+    -webkit-backdrop-filter: blur(22px) saturate(125%);
+  }
+  .app .modal {
+    background: color-mix(in srgb, var(--panel) 94%, transparent);
+    backdrop-filter: blur(30px) saturate(135%);
+    -webkit-backdrop-filter: blur(30px) saturate(135%);
+  }
+}
+.app .topbar, .app .workspace-tabs { box-shadow: inset 0 1px #ffffff08; }
+.app .workspace-tabs button, .app .connection-pill, .app .secondary,
+.app .production-team, .app .welcome-modal { border-radius: 12px; }
+.app .workspace-tabs button.active { box-shadow: inset 0 1px #ffffff12, 0 3px 12px #0002; }
+.app button:focus-visible, .app select:focus-visible, .app input:focus-visible,
+.app textarea:focus-visible, .app summary:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+.welcome-modal { width: min(520px, 100%); padding: 36px; }
+.welcome-modal h2 { font-size: clamp(24px, 4vw, 32px); margin: 12px 0; }
+.welcome-modal > p:not(.eyebrow) { color: var(--muted); font-size: 14px; line-height: 1.65; }
+.welcome-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 25px; }
+.production-team { margin: 18px 0; padding: 16px; border: 1px solid var(--line-strong); background: var(--panel); }
+.production-team summary { display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; }
+.production-team summary span { margin-left: auto; font-size: 11px; color: var(--muted); font-weight: 400; }
+.production-team-grid { display: grid; gap: 8px; margin-top: 12px; }
+.production-team-grid label { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.production-team-grid label span { display: grid; gap: 3px; }
+.production-team-grid label small { color: var(--muted); }
+.production-team-grid select { width: min(55%, 260px); }
+.production-role-label { text-transform: capitalize; }
+.pipeline-task-list .running.role-director { box-shadow: inset 3px 0 #af9bf2; }
+.pipeline-task-list .running.role-designer { box-shadow: inset 3px 0 #ec91bf; }
+.pipeline-task-list .running.role-animator { box-shadow: inset 3px 0 #80bde3; }
+.pipeline-task-list .running.role-editor { box-shadow: inset 3px 0 #dfba80; }
+.pipeline-task-list .running.role-composer { box-shadow: inset 3px 0 #80cdb4; }
+@media (max-width: 540px) {
+  .welcome-modal { padding: 24px; }
+  .production-team-grid label { align-items: stretch; flex-direction: column; gap: 6px; }
+  .production-team-grid select { width: 100%; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .app .topbar, .app .workspace-tabs, .app .tool-rail, .app .inspector,
+  .app .timeline, .app .modal { background: var(--panel); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+.welcome-demo-panel { position: fixed; z-index: 95; right: 20px; bottom: 20px; width: min(440px, calc(100vw - 40px)); }
+.welcome-demo-panel .welcome-modal { width: 100%; padding: 22px; }
+.workspace-tabs .agent-working { --agent-color: #af9bf2; box-shadow: inset 0 -2px var(--agent-color), 0 0 18px color-mix(in srgb, var(--agent-color) 18%, transparent); }
+.workspace-tabs .role-designer { --agent-color: #ec91bf; }
+.workspace-tabs .role-animator { --agent-color: #80bde3; }
+.workspace-tabs .role-editor { --agent-color: #dfba80; }
+.workspace-tabs .role-composer { --agent-color: #80cdb4; }
+.agent-activity-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--agent-color); box-shadow: 0 0 7px var(--agent-color); flex: none; }
+@supports (background: color-mix(in srgb, black 50%, transparent)) {
+  .app .library-panel, .app .director-header, .app .director-brief,
+  .app .production-progress {
+    background: color-mix(in srgb, var(--panel) 93%, transparent);
+    backdrop-filter: blur(18px) saturate(120%);
+    -webkit-backdrop-filter: blur(18px) saturate(120%);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .app .library-panel, .app .director-header, .app .director-brief,
+  .app .production-progress { background: var(--panel); backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+.production-role-skills { margin-top: 18px; }
+.production-role-skills > label { display: grid; gap: 6px; margin: 12px 0; }
+.production-role-skills textarea { width: 100%; resize: vertical; }
+.production-role-skills input[type="file"] { max-width: 100%; margin-left: 8px; font-size: 11px; }

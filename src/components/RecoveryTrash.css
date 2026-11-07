@@ -1,0 +1,6 @@
+.recovery-trash-item{padding:10px 0;border-bottom:1px solid var(--line)}
+.recovery-trash-item>strong{display:block;overflow-wrap:anywhere}
+.recovery-permanent,.recovery-confirm{display:block;min-width:0}
+.recovery-confirm{padding:10px;border:1px solid var(--line-strong);border-radius:6px;line-height:1.5;white-space:normal}
+.recovery-confirm>span:first-child{display:block;margin-bottom:8px}
+.recovery-confirm [role=alert]{display:block;color:var(--danger);margin-top:8px;overflow-wrap:anywhere}
