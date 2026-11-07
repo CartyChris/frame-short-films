@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {freefieldDefaults,parseFreefieldCatalog,unresolvedFreefieldRequest,validateFreefieldValues} from '../src/lib/freefield';
+import {freefieldDefaults,normalizeFreefieldJob,parseFreefieldCatalog,unresolvedFreefieldRequest,validateFreefieldValues} from '../src/lib/freefield';
 
 const fixture={id:'sound-effects',name:'Sound effects',section:'audio',status:'ready',runnable:true,summary:'Create audio',inputs:[
  {id:'prompt',type:'textarea',label:'Description',required:true,default:'rain'},
@@ -30,10 +30,19 @@ describe('Freefield catalog and inputs',()=>{
   const {runnable,...manifest}=fixture;expect(runnable).toBe(true);expect(parseFreefieldCatalog({apps:[manifest]}).apps[0].runnable).toBe(false);
  });
  it('blocks restored local requests until explicit acknowledgement, but accepts server IDs',()=>{
-  const starting={id:'local-request',identity:'local' as const,appId:'sound-effects',status:'starting' as const,outputs:[]};
+  const starting={id:'12345678-1234-4234-8234-123456789abc',requestId:'12345678-1234-4234-8234-123456789abc',identity:'local' as const,appId:'sound-effects',status:'starting' as const,outputs:[]};
   expect(unresolvedFreefieldRequest(starting)).toBe(true);
   expect(unresolvedFreefieldRequest({...starting,status:'unknown'})).toBe(true);
   expect(unresolvedFreefieldRequest({...starting,status:'unknown',acknowledged:true})).toBe(false);
   expect(unresolvedFreefieldRequest({...starting,identity:'server'})).toBe(false);
+ });
+ it('bounds saved run identities and output references before restoring a backup',()=>{
+  const requestId='12345678-1234-4234-8234-123456789abc';
+  const record={id:'20261106-123456789-abcd',requestId,identity:'server',appId:'sound-effects',status:'succeeded',outputs:[{id:'out-1.wav',name:'Sound',type:'audio'}]};
+  expect(normalizeFreefieldJob(record).requestId).toBe(requestId);
+  expect(()=>normalizeFreefieldJob({...record,outputs:[{id:'../secret',name:'Secret',type:'audio'}]})).toThrow();
+  expect(()=>normalizeFreefieldJob({...record,requestId:'not-a-uuid'})).toThrow();
+  expect(()=>normalizeFreefieldJob({...record,identity:'local'})).toThrow();
+  expect(()=>normalizeFreefieldJob({...record,outputs:Array(33).fill(record.outputs[0])})).toThrow();
  });
 });
