@@ -3,7 +3,7 @@ import {test,expect,type Page} from '@playwright/test';
 async function mount(page:Page){
  await page.evaluate(async()=>{
   const load=new Function('p','return import(p)');
-  const React=await load('/node_modules/.vite/deps/react.js'),dom=await load('/node_modules/.vite/deps/react-dom_client.js'),studio=await load('/src/components/FreefieldStudio.tsx');
+  const React=(await load('/node_modules/.vite/deps/react.js')).default,dom=(await load('/node_modules/.vite/deps/react-dom_client.js')).default,studio=await load('/src/components/FreefieldStudio.tsx');
   const root=document.createElement('div');root.style.cssText='position:fixed;inset:0;z-index:99999;overflow:auto;background:#17191c;color:white;padding:20px';document.body.append(root);
   const log=(s:string)=>{const list=JSON.parse(localStorage.getItem('freefield-test-log')||'[]');list.push(s);localStorage.setItem('freefield-test-log',JSON.stringify(list))};
   const saved=localStorage.getItem('freefield-test-job');
