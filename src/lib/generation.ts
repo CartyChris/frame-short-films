@@ -13,7 +13,7 @@ import type {DirectorMessage} from './chat-types';
 import type {GenerationFormat} from './story-types';
 export {combineContinuation} from './continuation';
 import type {ProviderConnection,GenerateRequest,StreamEvent,Scene,Project,GenerationRun,Asset} from './types';
-import {saveRun,appendChunk,finishRun,getDraft,uid} from './storage';
+import {saveRun,appendChunk,finishRun,getDraft,uid,withRunOwnership} from './storage';
 export const PROVIDERS=[
  {id:'openrouter',name:'OpenRouter',description:'One key. Every available model.',defaultModel:'',group:'API'},
  {id:'codex',name:'Codex · ChatGPT',description:'Your signed-in Codex CLI on this Mac.',defaultModel:'',group:'Subscription'},
@@ -71,6 +71,7 @@ export function makeMessages(project:Project,scene:Scene,prompt:string,base:stri
 export interface GenerateSceneArgs {project:Project;scene:Scene;connection:ProviderConnection;prompt:string;parent?:GenerationRun;signal:AbortSignal;format?:GenerationFormat;queueId?:string;queueItemId?:string;onDelta:(text:string,run:GenerationRun)=>void;onStart:(run:GenerationRun)=>void|Promise<void>}
 export interface JournaledArgs {connection:ProviderConnection;signal:AbortSignal;messages:()=>{role:string;content:string}[];onStart:(run:GenerationRun)=>void|Promise<void>;onDelta:(text:string,run:GenerationRun)=>void}
 export async function runJournaledGeneration(run:GenerationRun,args:JournaledArgs){
+ return withRunOwnership(run,async ownedRun=>{run=ownedRun;
  const c=args.connection,signal=args.signal,baseText=run.baseText;await saveRun(run);let partial='',seq=0,terminal=false,finishReason='';
  try{
   await args.onStart(run);if(signal.aborted)throw new DOMException('Stopped before provider request.','AbortError');
@@ -88,6 +89,7 @@ export async function runJournaledGeneration(run:GenerationRun,args:JournaledArg
   await finishRun(run.id,'complete',undefined,finishReason);
   return {run:{...run,lastSeq:seq-1,status:'complete' as const,finishReason},text:combineContinuation(baseText,partial)};
  }catch(error){const message=error instanceof Error?error.message:String(error);await finishRun(run.id,'interrupted',signal.aborted?'Stopped by you. All received chunks were saved.':message,finishReason);throw error;}
+ });
 }
 export async function generateScene(args:GenerateSceneArgs){
  const {project,scene,connection:c,prompt}=args;
