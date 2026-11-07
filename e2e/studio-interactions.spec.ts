@@ -25,12 +25,14 @@ test('media and workspace menus expose actions for the clicked area',async({page
  await page.getByRole('navigation',{name:'Workspaces'}).getByRole('button',{name:'Chat',exact:true}).click();await page.locator('.director-header').click({button:'right'});await expect(page.getByRole('menu',{name:'Chat quick actions'}).getByRole('menuitem',{name:'Open Film'})).toBeVisible();await page.getByRole('menuitem',{name:'Open Film'}).click();await expect(page.locator('.timeline')).toBeVisible();
 });
 
-test('scene quick actions also open the inspector on a narrow screen',async({page})=>{
- await page.setViewportSize({width:390,height:844});
+test.describe('narrow screen',()=>{
+ test.use({viewport:{width:390,height:844}});
+ test('scene quick actions also open the inspector',async({page})=>{
  await page.locator('.scene-clip').first().click({button:'right'});
  await page.getByRole('menuitem',{name:'Duplicate scene'}).click();
  await expect(page.locator('.scene-clip')).toHaveCount(2);
  await page.locator('.scene-clip').last().click({button:'right'});
  await page.getByRole('menuitem',{name:'Remove scene'}).click();
  await expect(page.locator('.scene-clip')).toHaveCount(1);
+ });
 });

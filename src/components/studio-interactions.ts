@@ -9,6 +9,18 @@ const compact=(actions:(QuickAction|undefined)[])=>actions.filter((x):x is Quick
 function afterSelected(target:HTMLElement,selectedClass:string,resolve:()=>HTMLButtonElement|undefined){
  target.click();requestAnimationFrame(()=>{if(!target.isConnected||!target.classList.contains(selectedClass))return;const button=resolve();if(clickable(button||null))button!.click()});
 }
+function openSceneInspector(root:HTMLElement,scene:HTMLElement,remove=false){
+ afterSelected(scene,'selected',()=>{
+  const tabs=root.querySelector('.inspector-tabs')||root;
+  if(!matchButton(tabs,'Scene'))matchButton(root.querySelector('.mobile-nav')||root,'Create')?.click();
+  requestAnimationFrame(()=>{
+   if(!scene.isConnected||!scene.classList.contains('selected'))return;
+   matchButton(tabs,'Scene')?.click();
+   if(remove)requestAnimationFrame(()=>{if(scene.isConnected&&scene.classList.contains('selected'))matchButton(root.querySelector('.inspector-scroll')||root,'Remove scene')?.click()});
+  });
+  return undefined;
+ });
+}
 function workspace(root:ParentNode,name:string){const nav=root.querySelector('nav[aria-label="Workspaces"]')||root;return [...nav.querySelectorAll('button')].find(b=>clickable(b)&&text(b).replace(/\s*NEW$/i,'')===name) as HTMLButtonElement|undefined}
 function navigate(root:ParentNode,names:string[]){return names.map(name=>buttonAction(`Open ${name}`,workspace(root,name)))}
 export function resolveQuickMenu(root:HTMLElement,target:Element):QuickMenu|undefined {
@@ -21,8 +33,8 @@ export function resolveQuickMenu(root:HTMLElement,target:Element):QuickMenu|unde
   return {title:`Scene: ${text(scene)}`,actions:compact([
    buttonAction('Select scene',scene,'Show this scene on the timeline.'),
    clickable(duplicate)?{label:'Duplicate scene',run:()=>afterSelected(scene,'selected',()=>root.querySelector<HTMLButtonElement>('button[aria-label="Duplicate selected scene"]')||undefined)}:undefined,
-   {label:'Edit scene settings',run:()=>afterSelected(scene,'selected',()=>matchButton(root.querySelector('.inspector-tabs')||root,'Scene'))},
-   removeAvailable?{label:'Remove scene',description:'The change can be undone.',run:()=>afterSelected(scene,'selected',()=>{matchButton(root.querySelector('.inspector-tabs')||root,'Scene')?.click();requestAnimationFrame(()=>{if(scene.isConnected&&scene.classList.contains('selected'))matchButton(root.querySelector('.inspector-scroll')||root,'Remove scene')?.click()});return undefined})}:undefined,
+   {label:'Edit scene settings',run:()=>openSceneInspector(root,scene)},
+   removeAvailable?{label:'Remove scene',description:'The change can be undone.',run:()=>openSceneInspector(root,scene,true)}:undefined,
   ])};
  }
  const asset=target.closest<HTMLElement>('.asset-card');
