@@ -1,5 +1,5 @@
 /* Frame caches only public application files. Project/media/key storage stays in the editor's own stores. */
-const CACHE = 'frame-public-shell-v7-studio';
+const CACHE = 'frame-public-shell-v7-creative-rig';
 const PREFIX = 'frame-public-shell-';
 const CORE = ['/index.html', '/film_core.wasm', '/runtime/frame-three-v6.js', '/runtime/frame-three.js', '/runtime/frame-motion.js', '/manifest.webmanifest', '/icon.svg', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png', '/icons/maskable-512.png', '/fonts/serif.ttf', '/fonts/italic.ttf', '/fonts/sans.ttf', '/fonts/Playfair-Display-LICENSE.txt', '/fonts/DM-Sans-LICENSE.txt'];
 const OPTIONAL_REFERENCES = ['/examples/western-paper-film.html'];

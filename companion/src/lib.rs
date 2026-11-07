@@ -26,6 +26,8 @@ use tokio_stream::wrappers::ReceiverStream;
 mod cli;
 mod freefield;
 mod integrations;
+mod ollama;
+mod vork;
 mod production_tools;
 
 #[derive(Clone)]
@@ -37,6 +39,7 @@ pub struct AppState {
     cli: Arc<cli::Registry>,
     production_tools: Arc<production_tools::Hub>,
     freefield: Arc<freefield::Hub>,
+    vork: Arc<vork::Hub>,
 }
 impl AppState {
     pub fn new(token: String, origins: HashSet<String>) -> Self {
@@ -48,6 +51,7 @@ impl AppState {
             cli: Arc::new(cli::Registry::default()),
             production_tools: Arc::new(production_tools::Hub::default()),
             freefield: Arc::new(freefield::Hub::default()),
+            vork: Arc::new(vork::Hub::default()),
         }
     }
 }
@@ -66,6 +70,7 @@ pub fn default_origins() -> HashSet<String> {
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health))
+        .route("/ollama/models", get(ollama::models))
         .route("/generate", post(generate))
         .route("/cli/profiles", get(cli::profiles).post(cli::register))
         .route("/cli/profiles/remove", post(cli::remove))
@@ -78,6 +83,12 @@ pub fn router(state: AppState) -> Router {
             "/integrations/mcp/disconnect",
             post(integrations::disconnect),
         )
+        .route("/production/vork/submit", post(vork::submit).layer(DefaultBodyLimit::max(105 * 1024 * 1024)))
+        .route("/production/vork/submit-custom", post(vork::submit_custom).layer(DefaultBodyLimit::max(105 * 1024 * 1024)))
+        .route("/production/vork/status", post(vork::status))
+        .route("/production/vork/download", post(vork::download))
+        .route("/production/vork/delete", post(vork::delete))
+        .route("/production/vork/cancel", post(vork::cancel))
         .route("/production/comfy/status", post(production_tools::status))
         .route("/production/comfy/submit", post(production_tools::submit))
         .route("/production/comfy/poll", post(production_tools::poll))
@@ -229,6 +240,12 @@ pub struct GenerateRequest {
     #[serde(default, rename = "apiKey")]
     pub api_key: Option<String>,
     pub messages: Vec<Message>,
+    #[serde(default, rename = "maxTokens")]
+    pub max_tokens: Option<u32>,
+    #[serde(default)]
+    pub temperature: Option<f64>,
+    #[serde(default)]
+    pub think: Option<bool>,
 }
 const ZAI_CLAUDE_BASE: &str = "https://api.z.ai/api/anthropic";
 fn coding_plan_key(
@@ -507,6 +524,7 @@ async fn generate(State(state): State<AppState>, Json(request): Json<GenerateReq
             "The companion is already generating. Stop or finish that run first.",
         );
     };
+    if request.provider == "ollama" { return ollama::generate(state,request,permit).await; }
     let input = match prompt(&request) {
         Ok(value) => value,
         Err(message) => return error(StatusCode::BAD_REQUEST, &message),

@@ -1,0 +1,9 @@
+import {describe,it,expect} from 'vitest';
+import {vorkScene,makeVorkPackage,prepareVorkGlb} from '../src/lib/three/vork';
+import {unzipSync,strFromU8} from 'fflate';
+function glb(manifest:object){const data=new TextEncoder().encode(JSON.stringify(manifest)),padded=Math.ceil(data.length/4)*4,bytes=new Uint8Array(20+padded),view=new DataView(bytes.buffer);view.setUint32(0,0x46546c67,true);view.setUint32(4,2,true);view.setUint32(8,bytes.length,true);view.setUint32(12,padded,true);view.setUint32(16,0x4e4f534a,true);bytes.fill(32,20);bytes.set(data,20);return bytes}
+describe('Vork interchange',()=>{
+ it('keeps the camera and adds a GLB clip only when one exists',()=>{expect(vorkScene(glb({animations:[{}]}),1920,1080,30).animation).toEqual([{clip:{target:'frame',index:0}}]);expect(vorkScene(glb({}),1920,1080,30)).not.toHaveProperty('animation');expect(()=>vorkScene(new Uint8Array([1]),100,100,30)).toThrow()});
+ it('drops unsupported point primitives without changing surviving node or animation indices',()=>{const input=glb({meshes:[{primitives:[{mode:0}]},{primitives:[{}]}],nodes:[{mesh:0},{mesh:1}],animations:[{name:'move'}]});const out=prepareVorkGlb(input),len=new DataView(out.buffer).getUint32(12,true),json=JSON.parse(new TextDecoder().decode(out.subarray(20,20+len)));expect(json.nodes).toEqual([{}, {mesh:0}]);expect(json.animations).toHaveLength(1);expect(json.meshes).toHaveLength(1)});
+ it('packages the scene, original GLB and a correctly bounded render command',async()=>{const bytes=glb({animations:[{}]});const zip=unzipSync(new Uint8Array(await (await makeVorkPackage(new Blob([bytes]),{width:640,height:480,fps:24,duration:2})).arrayBuffer()));expect([...zip['scene.glb']]).toEqual([...bytes]);expect(JSON.parse(strFromU8(zip['scene.json'])).render.camera).toBe('frame/Film camera');expect(strFromU8(zip['README.md'])).toContain('--frame-end 47')});
+});

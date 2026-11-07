@@ -1,3 +1,4 @@
+import {creativeContext,injectCreativeContext} from './creative-memory';
 import {projectAttachmentContext} from './chat-attachments';
 import {loadDirectorImages} from './chat-vision';
 import {threeRevisionTiming,threeForAgent} from './three-revision';
@@ -21,6 +22,7 @@ export const PROVIDERS=[
  {id:'claude-code',name:'Claude Code',description:'Your signed-in Claude Code subscription.',defaultModel:'',group:'Subscription'},
  {id:'kimi-code',name:'Kimi Code',description:'Your signed-in Kimi Code CLI. Local output-only agent.',defaultModel:'',group:'Subscription'},
  {id:'grok-build',name:'Grok Build',description:'Your signed-in official Grok Build CLI.',defaultModel:'',group:'Subscription'},
+ {id:'ollama',name:'Ollama',description:'Models already installed in Ollama on this Mac.',defaultModel:'',group:'Local'},
  {id:'custom-cli',name:'Trusted custom CLI',description:'Review a local executable and fixed arguments.',defaultModel:'',group:'Local'},
  {id:'moonshot',name:'Kimi / Moonshot API',description:'Kimi API billing, separate from the consumer subscription.',defaultModel:'',group:'API'},
  {id:'zai-coding',name:'Z.AI Coding Plan',description:'Through your supported, configured Claude Code tool.',defaultModel:'',group:'Subscription'},
@@ -38,7 +40,7 @@ export const PROVIDERS=[
  {id:'elevenlabs',name:'ElevenLabs',description:'Realistic narration and custom voices.',defaultModel:'',group:'Voice'},
  {id:'custom',name:'Custom endpoint',description:'Any public OpenAI-compatible API.',defaultModel:'',group:'Custom'}
 ];
-export const isLocalProvider=(provider:string)=>['codex','claude-code','zai-coding','kimi-code','grok-build','custom-cli'].includes(provider)||provider.startsWith('cli:');
+export const isLocalProvider=(provider:string)=>['codex','claude-code','zai-coding','kimi-code','grok-build','custom-cli','ollama'].includes(provider)||provider.startsWith('cli:');
 export const isLocal=(c:ProviderConnection)=>isLocalProvider(c.provider);
 export function apiUrl(path:string){return (localStorage.getItem('frame-api-origin')||(typeof window!=='undefined'&&'__TAURI_INTERNALS__' in window?import.meta.env.VITE_API_ORIGIN||'':'')).replace(/\/$/,'')+path}
 export async function* readEvents(response:Response):AsyncGenerator<StreamEvent>{if(!response.ok)throw new Error((await response.text()).slice(0,600)||`Request failed (${response.status})`);if(!response.body)throw new Error('This connection did not return a stream.');const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='';try{while(true){const {value,done}=await reader.read();buffer+=decoder.decode(value,{stream:!done});let newline;while((newline=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,newline).trim();buffer=buffer.slice(newline+1);if(line)yield JSON.parse(line) as StreamEvent;}if(done)break;}if(buffer.trim())yield JSON.parse(buffer) as StreamEvent;}finally{reader.releaseLock();}}
@@ -77,7 +79,7 @@ export async function runJournaledGeneration(run:GenerationRun,args:JournaledArg
  try{
   await args.onStart(run);if(signal.aborted)throw new DOMException('Stopped before provider request.','AbortError');
   let url=apiUrl('/api/generate');const headers:Record<string,string>={'Content-Type':'application/json'};
-  if(args.images?.length&&c.provider!=='openrouter')throw new Error('Selected images can only be sent through OpenRouter; start a new text-only message for this provider.');const body:GenerateRequest={provider:c.provider,apiKey:c.apiKey,baseUrl:c.baseUrl,model:c.model,messages:args.messages(),...(args.images?.length?{images:args.images}:{}),maxTokens:c.maxTokens,temperature:c.temperature};
+  if(args.images?.length&&c.provider!=='openrouter')throw new Error('Selected images can only be sent through OpenRouter; start a new text-only message for this provider.');const initialMessages=args.messages();const library=await creativeContext(run.projectId,initialMessages.filter(m=>m.role==='user').map(m=>m.content).join(' ').slice(-16000));const messages=injectCreativeContext(initialMessages,library);const body:GenerateRequest={provider:c.provider,apiKey:c.apiKey,baseUrl:c.baseUrl,model:c.model,messages,...(args.images?.length?{images:args.images}:{}),maxTokens:c.maxTokens,temperature:c.temperature,...(c.provider==='ollama'&&c.ollamaThink!==undefined?{think:c.ollamaThink}:{})};
   if(isLocal(c)){url=(c.bridgeUrl||'http://127.0.0.1:4319').replace(/\/$/,'')+'/generate';headers.Authorization='Bearer '+c.bridgeToken;body.apiKey=c.provider==='zai-coding'?c.apiKey:'';}
   const response=await fetch(url,{method:'POST',headers,body:JSON.stringify(body),signal});
   for await(const event of readEvents(response)){

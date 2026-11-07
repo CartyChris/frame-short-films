@@ -1,3 +1,5 @@
+import {validateVorkDraft} from './three/vork-draft';
+import {creativeIndex,CREATIVE_INDEX_PREFIX} from './creative-index';
 import {normalizeProductionToolsDocument,remapProductionToolsDocument} from './production-tools';
 import {normalizeMotionDocument} from './motion/document';
 import {invoke as nativeInvoke} from '@tauri-apps/api/core';
@@ -27,7 +29,7 @@ async function assertLive(settings:any,projectId:string,value?:unknown){
  if(deletedProjects.includes(projectId))throw new Error('This film was permanently deleted. Save a new copy before continuing.');
  if(value!==undefined){for(const key of [PURGED_ASSETS,PURGED_ATTACHMENTS]){const ids:string[]=(await settings.get(key))||[];if(ids.some(id=>containsReference(value,id)))throw new Error('This edit references a permanently deleted file. Remove that reference or restore a project backup.')}}
 }
-export async function saveProject(project:Project){const snapshot=structuredClone(project);const next=saveChain.catch(()=>{}).then(async()=>{const d=await db(),tx=d.transaction(['projects','settings'],'readwrite');try{await assertLive(tx.objectStore('settings'),snapshot.id,snapshot);await tx.objectStore('projects').put(snapshot);await tx.done}catch(e){try{tx.abort()}catch{}await tx.done.catch(()=>{});throw e}});saveChain=next;await next;}
+export async function saveProject(project:Project){const snapshot=structuredClone(project);const next=saveChain.catch(()=>{}).then(async()=>{const d=await db(),tx=d.transaction(['projects','settings'],'readwrite');try{await assertLive(tx.objectStore('settings'),snapshot.id,snapshot);await tx.objectStore('projects').put(snapshot);await tx.objectStore('settings').put(creativeIndex(snapshot),CREATIVE_INDEX_PREFIX+snapshot.id);await tx.done}catch(e){try{tx.abort()}catch{}await tx.done.catch(()=>{});throw e}});saveChain=next;await next;}
 export async function listProjects():Promise<Project[]>{const d=await db(),trashed=new Set<string>((await d.get('settings','trash-projects'))||[]);return (await d.getAll('projects')).filter((p:Project)=>!trashed.has(p.id)).sort((a:Project,b:Project)=>b.updatedAt-a.updatedAt)}
 // Trash hides objects without destroying drafts, shared media, or recoverable project data.
 export async function trashedItems(kind:'projects'|'assets'):Promise<string[]>{return (await (await db()).get('settings','trash-'+kind))||[]}
@@ -42,7 +44,7 @@ export async function purgeProject(id:string){
   const ownedAttachments=await tx.objectStore('attachments').index('projectId').getAllKeys(id),ownedRuns=new Set(projectRuns.map(run=>run.id)),ownedIds=[id,...ownedRuns,...ownedAttachments.map(String)];for(const name of ['projects','runs','chunks','revisions','jobs','attachments'] as const){let cursor=await tx.objectStore(name).openCursor();while(cursor){const record=cursor.value,other=name==='projects'?record.id!==id:name==='chunks'?!ownedRuns.has(record.runId):record.projectId!==id;if(other&&ownedIds.some(ownedId=>containsReference(record,ownedId)))throw new Error('Another film or recovery record still references this film or its files. Remove that reference before deleting it.');cursor=await cursor.continue()}}
   for(const run of projectRuns){for(const chunk of await chunks.index('runId').getAllKeys(run.id))await chunks.delete(chunk);await runs.delete(run.id)}
   for(const name of ['revisions','jobs','attachments'] as const){const store=tx.objectStore(name),keys=await store.index('projectId').getAllKeys(id);if(name==='attachments'){const deleted=new Set<string>((await settings.get(PURGED_ATTACHMENTS))||[]);for(const key of keys)deleted.add(String(key));await settings.put([...deleted],PURGED_ATTACHMENTS)}for(const key of keys)await store.delete(key)}
-  await tx.objectStore('projects').delete(id);trash.delete(id);await settings.put([...trash],'trash-projects');const purged=new Set<string>((await settings.get(PURGED_PROJECTS))||[]);purged.add(id);await settings.put([...purged],PURGED_PROJECTS);await tx.done;
+  await tx.objectStore('projects').delete(id);await settings.delete(CREATIVE_INDEX_PREFIX+id);const golden=await settings.get('creative-golden-v1');if(Array.isArray(golden))await settings.put(golden.filter((item:any)=>item?.sourceProjectId!==id),'creative-golden-v1');trash.delete(id);await settings.put([...trash],'trash-projects');const purged=new Set<string>((await settings.get(PURGED_PROJECTS))||[]);purged.add(id);await settings.put([...purged],PURGED_PROJECTS);await tx.done;
  }catch(e){try{tx.abort()}catch{}await tx.done.catch(()=>{});throw e}
 }
 /** Refuse to erase shared files until no saved film or recovery record references them. */
@@ -50,7 +52,7 @@ export async function purgeAsset(id:string){
  await saveChain.catch(()=>{});const d=await db(),tx=d.transaction(['settings','assets','projects','runs','chunks','revisions','jobs','attachments'],'readwrite',{durability:'strict'});
  try{const settings=tx.objectStore('settings'),trash=new Set<string>((await settings.get('trash-assets'))||[]);if(!trash.has(id)||!await tx.objectStore('assets').get(id))throw new Error('Only media in Recovery can be permanently deleted.');
   for(const name of ['projects','runs','chunks','revisions','jobs','attachments'] as const){let cursor=await tx.objectStore(name).openCursor();while(cursor){if(name==='runs'&&cursor.value.status==='streaming')throw new Error('Stop active generations in all open tabs before permanently deleting media.');if(containsReference(cursor.value,id))throw new Error('This media is still referenced by a saved film or recovery record. Remove those references before deleting it permanently.');cursor=await cursor.continue()}}
-  await tx.objectStore('assets').delete(id);trash.delete(id);await settings.put([...trash],'trash-assets');const purged=new Set<string>((await settings.get(PURGED_ASSETS))||[]);purged.add(id);await settings.put([...purged],PURGED_ASSETS);await tx.done;
+  await tx.objectStore('assets').delete(id);const golden=await settings.get('creative-golden-v1');if(Array.isArray(golden))await settings.put(golden.filter((item:any)=>item?.sourceId!==id),'creative-golden-v1');trash.delete(id);await settings.put([...trash],'trash-assets');const purged=new Set<string>((await settings.get(PURGED_ASSETS))||[]);purged.add(id);await settings.put([...purged],PURGED_ASSETS);await tx.done;
  }catch(e){try{tx.abort()}catch{}await tx.done.catch(()=>{});throw e}
 }
 export async function getProject(id:string):Promise<Project|undefined>{await saveChain.catch(()=>{});return (await db()).get('projects',id)}
@@ -114,6 +116,7 @@ export function validateProject(value:unknown):asserts value is Project {
  if(p.story&&(!Array.isArray(p.story.characters)||!Array.isArray(p.story.locations)||!Array.isArray(p.story.lockedFacts)||typeof p.story.initialState!=='object'))throw new Error('Invalid story bible.');
  if(p.story)for(const record of [...p.story.characters,...p.story.locations])if(!record||typeof record.id!=='string'||typeof record.name!=='string'||!Array.isArray(record.referenceAssetIds))throw new Error('Invalid cast or location reference.');
  if(p.production!==undefined&&(!Array.isArray(p.production)||p.production.some(q=>!q||typeof q.id!=='string'||!Array.isArray(q.items)||q.items.some(i=>!i||typeof i.id!=='string'||!Number.isFinite(i.duration)||i.duration<=0))))throw new Error('Invalid production queue.');
+ if(p.vorkDraft!==undefined)validateVorkDraft(p.vorkDraft);
  if(p.integrationJobs!==undefined&&!Array.isArray(p.integrationJobs))throw new Error('Invalid integration jobs.');
  if(p.mcpHistory!==undefined)p.mcpHistory=mergeMcpHistory(p.mcpHistory);
  if(p.productionTools!==undefined)p.productionTools=normalizeProductionToolsDocument(p.productionTools);
@@ -142,6 +145,7 @@ export async function importArchive(value:unknown){
  for(const j of a.jobs)if(!j||typeof j.id!=='string'||typeof j.provider!=='string')throw new Error('An archived media job is invalid.');
  const attachmentIds=new Set<string>(),decodedAttachments:FilmAttachment[]=[];
  for(const f of a.attachments){if(!f||typeof f.id!=='string'||!f.id||attachmentIds.has(f.id)||f.projectId!==a.project.id||typeof f.name!=='string'||typeof f.mime!=='string'||typeof f.data!=='string'||!Number.isFinite(f.createdAt)||!Number.isSafeInteger(f.size)||f.size<0||(f.assetId!==undefined&&typeof f.assetId!=='string'))throw new Error('An archived attached file is invalid.');const data=archiveBlob(f.data,f.mime);if(data.size!==f.size)throw new Error('An archived attached file has incomplete bytes.');attachmentIds.add(f.id);decodedAttachments.push({...f,data})}
+ if(a.project.vorkDraft&&!attachmentIds.has(a.project.vorkDraft.attachmentId))throw new Error('The saved Vork source archive is missing from this project backup.');
  for(const message of a.project.chat?.messages||[])for(const id of message.attachmentIds||[])if(!attachmentIds.has(id))throw new Error('A saved Chat message references an attached file missing from the archive.');
  for(const f of decodedAttachments)if(f.assetId&&!a.assets.some(asset=>asset.id===f.assetId))throw new Error('An attached file references missing media.');
  // Restore as an independent project, so older backups can never overwrite newer histories.
@@ -152,6 +156,7 @@ export async function importArchive(value:unknown){
  const mediaIds=new Set(a.assets.map(item=>item.id));
  a.project.assetAliases={...Object.fromEntries(Object.entries(a.project.assetAliases||{}).map(([source,target])=>[source,fresh(target)])),...Object.fromEntries([...mediaIds].map(id=>[id,fresh(id)]))};
  if(a.project.productionTools)a.project.productionTools=remapProductionToolsDocument(a.project.productionTools,{assetId:id=>mediaIds.has(id)?fresh(id):id});
+ if(a.project.vorkDraft)a.project.vorkDraft.attachmentId=fresh(a.project.vorkDraft.attachmentId);
  if(a.project.chat)a.project.chat=remapDirectorChat(a.project.chat,{runId:fresh,mediaId:id=>mediaIds.has(id)?fresh(id):id,sceneId:id=>id?fresh(id):id,queueId:fresh,itemId:fresh,mediaIds:[...mediaIds],attachmentId:fresh});
  if(a.project.story)for(const canon of [...a.project.story.characters,...a.project.story.locations])canon.referenceAssetIds=canon.referenceAssetIds.map(id=>mediaIds.has(id)?fresh(id):id);
  for(const q of a.project.production||[]){q.id=fresh(q.id);if(q.planRunId)q.planRunId=fresh(q.planRunId);if(q.status==='running')q.status='paused';for(const item of q.items){item.id=fresh(item.id);if(item.sceneId)item.sceneId=fresh(item.sceneId);if(item.runId)item.runId=fresh(item.runId);if(item.status==='running'){item.status='interrupted';item.error='Restored job. Continue from its saved draft.'}}}

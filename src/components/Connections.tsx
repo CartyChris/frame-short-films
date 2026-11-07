@@ -25,6 +25,7 @@ export function Connections({connections,onChange,onClose,notify}:{connections:P
  const [key,setKey]=useState(''),[model,setModel]=useState(''),[baseUrl,setBaseUrl]=useState('');
  const [bridgeUrl,setBridgeUrl]=useState(initial?.bridgeUrl||'http://127.0.0.1:4319'),[bridgeToken,setBridgeToken]=useState(initial?.bridgeToken||'');
  const [models,setModels]=useState<Model[]>([]),[search,setSearch]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ const [ollamaThink,setOllamaThink]=useState<'default'|'on'|'off'>('default');
  const [pass,setPass]=useState(''),[temp,setTemp]=useState(.75),[max,setMax]=useState(16000),[apiOrigin,setApiOrigin]=useState(localStorage.getItem('frame-api-origin')||'');
  const [inventory,setInventory]=useState<Record<string,CliStatus>|null>(null),[profiles,setProfiles]=useState<CliProfile[]>([]);
  const [profileId,setProfileId]=useState(initial?.provider.startsWith('cli:')?initial.provider.slice(4):'');
@@ -44,13 +45,14 @@ export function Connections({connections,onChange,onClose,notify}:{connections:P
   return status.providers as Record<string,CliStatus>;
  }
  async function catalog(){setBusy(true);setError('');try{
+  if(provider==='ollama'){const data=await companion('/ollama/models');setModels(data.models||[]);if(data.models?.length&&!model)setModel(data.models[0].id);notify('Installed Ollama models loaded. No models were downloaded.');return;}
   if(local){await scan();notify('Companion paired. Installed tools are listed; account sign-in is checked when a tool handles a request.');return;}
   const response=await fetch(apiUrl('/api/models'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider,apiKey:key,baseUrl})});
   const data=await response.json();if(!response.ok)throw new Error(data.error||'Could not load models.');setModels(data.models||[]);if(data.models?.length&&!model)setModel(data.models[0].id);
  }catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false);}}
- function connection(id:string,name:string):ProviderConnection{return {id:uid(),provider:id,name,model,apiKey:key,baseUrl,bridgeUrl:local?loopback(bridgeUrl):bridgeUrl,bridgeToken,temperature:temp,maxTokens:max};}
+ function connection(id:string,name:string):ProviderConnection{return {id:uid(),provider:id,name,model,apiKey:key,baseUrl,bridgeUrl:local?loopback(bridgeUrl):bridgeUrl,bridgeToken,temperature:temp,maxTokens:max,...(provider==='ollama'&&ollamaThink!=='default'?{ollamaThink:ollamaThink==='on'}:{})};}
  function add(){try{
-  if(!local&&!key)throw new Error('Add your provider API key.');if(!local&&!model)throw new Error('Choose a model or enter its model ID.');if(local&&!bridgeToken)throw new Error('Enter the token shown by your local companion.');
+  if(!local&&!key)throw new Error('Add your provider API key.');if(!local&&!model)throw new Error('Choose a model or enter its model ID.');if(local&&!bridgeToken)throw new Error('Enter the token shown by your local companion.');if(provider==='ollama'&&!model)throw new Error('Choose an installed Ollama model.');
   const profile=profiles.find(p=>p.id===profileId);if(provider==='custom-cli'&&!profile)throw new Error('Scan the companion, then select or register a trusted CLI profile.');
   const id=profile&&provider==='custom-cli'?'cli:'+profile.id:provider,name=profile&&provider==='custom-cli'?profile.name:preset.name;
   onChange([...connections,connection(id,name)]);notify(`${name} connection added. Keys stay in memory unless saved in your vault.`);onClose();
@@ -79,8 +81,9 @@ export function Connections({connections,onChange,onClose,notify}:{connections:P
    <label>Pairing token<input type="password" value={bridgeToken} onChange={e=>{setBridgeToken(e.target.value);setInventory(null);}} placeholder="Token printed by the companion" autoComplete="off"/></label>
    <p className="hint">Allow this app’s exact origin in the companion: <code>{location.origin}</code>. Browser/PWA local tools require the companion on the same computer. Mobile uses API connections.</p>
   </>:<><label>API key<input type="password" value={key} onChange={e=>setKey(e.target.value)} placeholder="Paste your own API key" autoComplete="off" spellCheck={false}/></label>{provider==='custom'&&<label>API base URL<input value={baseUrl} onChange={e=>setBaseUrl(e.target.value)} placeholder="https://your-provider.com/v1"/></label>}</>}
-  <div className="row"><button className="secondary" disabled={busy} onClick={catalog}><RefreshCw size={14} className={busy?'spin':''}/>{local?'Scan local tools':'Load live models'}</button>{local&&inventory&&<button className="secondary" disabled={busy} onClick={syncInstalled}>Add installed connections</button>}{models.length>0&&<span className="hint">{models.length.toLocaleString()} models</span>}</div>
+  <div className="row"><button className="secondary" disabled={busy} onClick={catalog}><RefreshCw size={14} className={busy?'spin':''}/>{provider==='ollama'?'Load installed models':local?'Scan local tools':'Load live models'}</button>{local&&inventory&&<button className="secondary" disabled={busy} onClick={syncInstalled}>Add installed connections</button>}{models.length>0&&<span className="hint">{models.length.toLocaleString()} models</span>}</div>
   {local&&inventory&&<div className="model-list" aria-label="Installed CLI inventory">{Object.entries(inventory).map(([id,item])=><button key={id} disabled={!item.adapter} className={(provider===id||provider==='custom-cli'&&id==='cli:'+profileId)?'active':''} onClick={()=>{select(id.startsWith('cli:')?'custom-cli':id);if(id.startsWith('cli:'))setProfileId(id.slice(4));}}><span>{item.name}<small>{item.installed?'Installed':'Not installed'} · {item.adapter?'Sign-in unchecked':'Custom adapter required'}</small>{item.executable&&<small title={item.executable}>{item.executable}</small>}</span>{item.installed&&<Check size={14}/>}</button>)}</div>}
+  {provider==='ollama'&&<><p className="hint">The list includes all installed Ollama models. Embedding-only models cannot answer chat or generate films; choose a chat-capable model.</p><label>Ollama reasoning<select value={ollamaThink} onChange={e=>setOllamaThink(e.target.value as typeof ollamaThink)}><option value="default">Model default</option><option value="on">On, if supported</option><option value="off">Off, for faster replies</option></select></label></>}
   {provider==='custom-cli'&&<>
    <label>Saved CLI profile<select value={profileId} onChange={e=>setProfileId(e.target.value)}><option value="">Select a registered profile</option>{profiles.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
    {profileId&&profiles.some(p=>p.id===profileId)&&<button className="text-button" disabled={busy} onClick={async()=>{try{const data=await companion('/cli/profiles/remove',{id:profileId});setProfiles(data.profiles);setProfileId('');await scan();notify('CLI profile removed. Existing connections to it will need a new profile.');}catch(e){setError((e as Error).message);}}}><Trash2 size={13}/>Remove profile</button>}

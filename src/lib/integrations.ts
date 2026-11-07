@@ -6,7 +6,7 @@ import blenderAddon from '../../integrations/blender/frame_blender.py?raw';
 import blenderGuide from '../../integrations/blender/README.md?raw';
 
 export interface IntegrationJob {
- id:string;provider:'tripo'|'blender'|'mcp';status:'planned'|'submitted'|'running'|'succeeded'|'failed'|'unknown';
+ id:string;provider:'tripo'|'blender'|'mcp'|'vork';status:'planned'|'submitted'|'running'|'succeeded'|'failed'|'unknown'|'canceled';
  name:string;createdAt:number;updatedAt:number;taskId?:string;model?:string;outputFiles?:string[];creditsConsumed?:number;error?:string;
 }
 export interface McpTool {name:string;description?:string;inputSchema:Record<string,unknown>;annotations?:{readOnlyHint?:boolean;destructiveHint?:boolean;openWorldHint?:boolean}}
