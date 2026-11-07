@@ -780,7 +780,7 @@ for line in sys.stdin:
     method=msg.get('method')
     if method=='initialize': result={'protocolVersion':'2025-11-25','serverInfo':{'name':'Fixture','version':'1'},'capabilities':{'tools':{}}}
     elif method=='tools/list': result={'tools':[{'name':'pose','inputSchema':{'type':'object'}}]}
-    elif method=='tools/call': result={'content':[{'type':'text','text':'posed'}]}
+    elif method=='tools/call': result={'content':[{'type':'text','text':sys.prefix}]}
     else: result={}
     print(json.dumps({'jsonrpc':'2.0','id':msg['id'],'result':result}),flush=True)
 "#).unwrap();
@@ -843,6 +843,9 @@ for line in sys.stdin:
         let id = value["connectionId"].as_str().unwrap();
         let response=app.clone().oneshot(req("/integrations/mcp/call",json!({"connectionId":id,"name":"pose","arguments":{},"requestId":"pose-once","approved":true}))).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+        let outcome:Value=serde_json::from_slice(&to_bytes(response.into_body(),MAX_RESPONSE).await.unwrap()).unwrap();
+        let actual=std::fs::canonicalize(outcome["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(actual,std::fs::canonicalize(&venv).unwrap());
         let duplicate=app.clone().oneshot(req("/integrations/mcp/call",json!({"connectionId":id,"name":"pose","arguments":{},"requestId":"pose-once","approved":true}))).await.unwrap();
         assert_eq!(duplicate.status(), StatusCode::BAD_REQUEST);
         let updated = app
