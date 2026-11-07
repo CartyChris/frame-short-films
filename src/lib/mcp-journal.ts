@@ -42,6 +42,14 @@ function cleanRecord(value:McpJournalRecord):McpJournalRecord {
  return {identity:cleanIdentity(value.identity),state:value.state,createdAt:value.createdAt,updatedAt:value.updatedAt,...(value.dispatchedAt!==undefined?{dispatchedAt:value.dispatchedAt}:{}),...(receipt?{receipt}:{})};
 }
 function same(a:McpOperationIdentity,b:McpOperationIdentity){return (Object.keys(a) as (keyof McpOperationIdentity)[]).every(k=>a[k]===b[k])}
+/** Sanitized, inert backup history. Pending claims become uncertain on export. */
+export function mergeMcpHistory(...lists:unknown[]):McpJournalRecord[]{
+ const records=new Map<string,McpJournalRecord>();
+ for(const list of lists){if(list===undefined)continue;if(!Array.isArray(list)||list.length>10000)throw new Error('Invalid archived MCP history.');for(const item of list){let record=cleanRecord(item as McpJournalRecord);if(record.state==='pending')record={...record,state:'unknown'};const id=record.identity.requestId,old=records.get(id);if(!old){records.set(id,record);continue}if(!same(old.identity,record.identity))throw new Error('Conflicting archived MCP operation identity.');const oldFinal=old.state==='complete'||old.state==='failed',newFinal=record.state==='complete'||record.state==='failed';if(oldFinal&&newFinal&&(old.state!==record.state||JSON.stringify(old.receipt)!==JSON.stringify(record.receipt)))throw new Error('Conflicting archived MCP operation outcome.');if((newFinal&&!oldFinal)||(newFinal===oldFinal&&record.updatedAt>old.updatedAt))records.set(id,record)}}
+ if(records.size>10000)throw new Error('Too many archived MCP operations.');return [...records.values()];
+}
+/** Required gate for any future dispatcher operating on a restored project. */
+export function assertMcpRequestNotArchived(history:McpJournalRecord[]|undefined,requestId:string):void {if(mergeMcpHistory(history).some(r=>r.identity.requestId===requestId.toLowerCase()))throw new Error('This MCP request is preserved in imported history and cannot be automatically dispatched again.');}
 function publicRecord(value:StoredRecord):McpJournalRecord {return cleanRecord(value)}
 export async function digestMcpBytes(bytes:Uint8Array):Promise<string>{const hash=await crypto.subtle.digest('SHA-256',new Uint8Array(bytes));return [...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,'0')).join('')}
 /** A separate database allows adoption without changing the main project schema. */

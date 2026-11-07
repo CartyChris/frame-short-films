@@ -4,6 +4,7 @@ import {invoke as nativeInvoke} from '@tauri-apps/api/core';
 import {combineContinuation} from './continuation';
 import {normalizeThreeDocument} from './three/document';
 import {normalizeDirectorChat,remapDirectorChat} from './director';
+import {createMcpJournal,mergeMcpHistory} from './mcp-journal';
 import {validateDesign,validateCastScene} from './casting';
 import {validateProceduralModel} from './three/procedural';
 import {validateSoundtrack} from './sound/document';
@@ -101,7 +102,7 @@ export async function setSetting(key:string,value:unknown){await (await db()).pu
 export async function getSetting<T>(key:string):Promise<T|undefined>{return (await db()).get('settings',key)}
 export interface ArchivedAttachment extends Omit<FilmAttachment,'data'>{data:string}
 export interface ProjectArchive {format:'frame-project';version:1;project:Project;assets:Asset[];runs:GenerationRun[];chunks:Chunk[];revisions:Revision[];jobs:MediaJob[];attachments?:ArchivedAttachment[]}
-export async function createArchive(project:Project):Promise<ProjectArchive>{const assets:Asset[]=await (await db()).getAll('assets');const runs=await getRuns(project.id);const chunks=(await Promise.all(runs.map(r=>getChunks(r.id)))).flat();const attachments=await Promise.all((await getAttachments(project.id)).map(async a=>({...a,data:await fileData(a.data)})));return {format:'frame-project',version:1,project,assets,runs,chunks,revisions:await getRevisions(project.id),jobs:await getJobs(project.id),attachments}}
+export async function createArchive(project:Project):Promise<ProjectArchive>{const journal=createMcpJournal();let liveHistory;try{liveHistory=await journal.exportRecords(project.id)}finally{await journal.close()}const history=mergeMcpHistory(project.mcpHistory,liveHistory),snapshot=structuredClone(project);if(history.length)snapshot.mcpHistory=history;else delete snapshot.mcpHistory;const assets:Asset[]=await (await db()).getAll('assets');const runs=await getRuns(project.id);const chunks=(await Promise.all(runs.map(r=>getChunks(r.id)))).flat();const attachments=await Promise.all((await getAttachments(project.id)).map(async a=>({...a,data:await fileData(a.data)})));return {format:'frame-project',version:1,project:snapshot,assets,runs,chunks,revisions:await getRevisions(project.id),jobs:await getJobs(project.id),attachments}}
 function archiveBlob(source:string,mime:string):Blob{const match=/^data:[^,]*;base64,([A-Za-z0-9+/]*={0,2})$/.exec(source);if(!match||match[1].length%4!==0)throw new Error('An archived file has invalid encoded bytes.');const chunks:Uint8Array<ArrayBuffer>[]=[];try{for(let i=0;i<match[1].length;i+=65536){const text=atob(match[1].slice(i,i+65536)),part=new Uint8Array(text.length);for(let j=0;j<text.length;j++)part[j]=text.charCodeAt(j);chunks.push(part)}}catch{throw new Error('An archived file has invalid encoded bytes.')}return new Blob(chunks,{type:mime})}
 export function validateProject(value:unknown):asserts value is Project {
  if(!value||typeof value!=='object')throw new Error('Not a Frame project.');const p=value as Project;
@@ -114,6 +115,7 @@ export function validateProject(value:unknown):asserts value is Project {
  if(p.story)for(const record of [...p.story.characters,...p.story.locations])if(!record||typeof record.id!=='string'||typeof record.name!=='string'||!Array.isArray(record.referenceAssetIds))throw new Error('Invalid cast or location reference.');
  if(p.production!==undefined&&(!Array.isArray(p.production)||p.production.some(q=>!q||typeof q.id!=='string'||!Array.isArray(q.items)||q.items.some(i=>!i||typeof i.id!=='string'||!Number.isFinite(i.duration)||i.duration<=0))))throw new Error('Invalid production queue.');
  if(p.integrationJobs!==undefined&&!Array.isArray(p.integrationJobs))throw new Error('Invalid integration jobs.');
+ if(p.mcpHistory!==undefined)p.mcpHistory=mergeMcpHistory(p.mcpHistory);
  if(p.productionTools!==undefined)p.productionTools=normalizeProductionToolsDocument(p.productionTools);
  if(p.chat!==undefined)p.chat=normalizeDirectorChat(p.chat);
  if(p.castDesigns!==undefined){if(!p.castDesigns||typeof p.castDesigns!=='object'||Array.isArray(p.castDesigns)||Object.keys(p.castDesigns).length>2000)throw new Error('Invalid cast design library.');for(const design of Object.values(p.castDesigns))validateDesign(design);}
