@@ -28,8 +28,8 @@ mod freefield;
 mod integrations;
 mod mcp_profiles;
 mod ollama;
-mod vork;
 mod production_tools;
+mod vork;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -78,8 +78,14 @@ pub fn router(state: AppState) -> Router {
         .route("/cli/profiles", get(cli::profiles).post(cli::register))
         .route("/cli/profiles/remove", post(cli::remove))
         .route("/integrations/status", get(integrations::status))
-        .route("/integrations/mcp/profiles", get(integrations::profiles).post(integrations::register_profile))
-        .route("/integrations/mcp/profiles/remove", post(integrations::remove_profile))
+        .route(
+            "/integrations/mcp/profiles",
+            get(integrations::profiles).post(integrations::register_profile),
+        )
+        .route(
+            "/integrations/mcp/profiles/remove",
+            post(integrations::remove_profile),
+        )
         .route("/integrations/mcp/connect", post(integrations::connect))
         .route("/integrations/mcp/tools", post(integrations::tools))
         .route("/integrations/mcp/call", post(integrations::call))
@@ -88,8 +94,14 @@ pub fn router(state: AppState) -> Router {
             "/integrations/mcp/disconnect",
             post(integrations::disconnect),
         )
-        .route("/production/vork/submit", post(vork::submit).layer(DefaultBodyLimit::max(105 * 1024 * 1024)))
-        .route("/production/vork/submit-custom", post(vork::submit_custom).layer(DefaultBodyLimit::max(105 * 1024 * 1024)))
+        .route(
+            "/production/vork/submit",
+            post(vork::submit).layer(DefaultBodyLimit::max(105 * 1024 * 1024)),
+        )
+        .route(
+            "/production/vork/submit-custom",
+            post(vork::submit_custom).layer(DefaultBodyLimit::max(105 * 1024 * 1024)),
+        )
         .route("/production/vork/status", post(vork::status))
         .route("/production/vork/download", post(vork::download))
         .route("/production/vork/delete", post(vork::delete))
@@ -97,9 +109,15 @@ pub fn router(state: AppState) -> Router {
         .route("/production/comfy/status", post(production_tools::status))
         .route("/production/comfy/submit", post(production_tools::submit))
         .route("/production/comfy/poll", post(production_tools::poll))
-        .route("/production/comfy/download", post(production_tools::download))
+        .route(
+            "/production/comfy/download",
+            post(production_tools::download),
+        )
         .route("/production/freefield/discover", post(freefield::discover))
-        .route("/production/freefield/submit", post(freefield::submit).layer(DefaultBodyLimit::max(105 * 1024 * 1024)))
+        .route(
+            "/production/freefield/submit",
+            post(freefield::submit).layer(DefaultBodyLimit::max(105 * 1024 * 1024)),
+        )
         .route("/production/freefield/receipt", post(freefield::receipt))
         .route("/production/freefield/poll", post(freefield::poll))
         .route("/production/freefield/download", post(freefield::download))
@@ -529,7 +547,9 @@ async fn generate(State(state): State<AppState>, Json(request): Json<GenerateReq
             "The companion is already generating. Stop or finish that run first.",
         );
     };
-    if request.provider == "ollama" { return ollama::generate(state,request,permit).await; }
+    if request.provider == "ollama" {
+        return ollama::generate(state, request, permit).await;
+    }
     let input = match prompt(&request) {
         Ok(value) => value,
         Err(message) => return error(StatusCode::BAD_REQUEST, &message),
@@ -603,18 +623,22 @@ async fn generate(State(state): State<AppState>, Json(request): Json<GenerateReq
         let _permit = permit;
         let _temp = temp;
         if invocation.stdin {
-            let written=tokio::select! {
+            let written = tokio::select! {
                 _=tx.closed()=>{let _=child.kill().await;return;}
                 result=tokio::time::timeout(Duration::from_secs(30),stdin.write_all(input.as_bytes()))=>matches!(result,Ok(Ok(()))),
             };
             if !written {
                 let _=send(&tx,json!({"type":"error","message":"The CLI did not accept the request on standard input within 30 seconds. Check the tool's configured arguments."})).await;
-                let _=child.kill().await;return;
+                let _ = child.kill().await;
+                return;
             }
         }
         drop(stdin);
         if invocation.protocol == "text" {
-            if let Err(message)=cli::stream_text(&mut child,stdout,&tx).await {let _=send(&tx,json!({"type":"error","message":message})).await;let _=child.kill().await;}
+            if let Err(message) = cli::stream_text(&mut child, stdout, &tx).await {
+                let _ = send(&tx, json!({"type":"error","message":message})).await;
+                let _ = child.kill().await;
+            }
             return;
         }
         let mut lines = BufReader::new(stdout);

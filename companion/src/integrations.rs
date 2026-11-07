@@ -490,29 +490,47 @@ async fn refresh(connection: &mut Connection) -> Result<Vec<Value>, String> {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct RegisterProfile { profile: super::mcp_profiles::ProfileInput, reviewed: bool }
+pub struct RegisterProfile {
+    profile: super::mcp_profiles::ProfileInput,
+    reviewed: bool,
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct RemoveProfile { id: String }
+pub struct RemoveProfile {
+    id: String,
+}
 pub async fn profiles(State(state): State<AppState>) -> Response {
-    if let Some(message)=state.mcp_profiles.error() { return error(StatusCode::BAD_REQUEST,message); }
+    if let Some(message) = state.mcp_profiles.error() {
+        return error(StatusCode::BAD_REQUEST, message);
+    }
     Json(json!({"profiles":state.mcp_profiles.list()})).into_response()
 }
-pub async fn register_profile(State(state): State<AppState>, Json(request): Json<RegisterProfile>) -> Response {
-    if !request.reviewed { return error(StatusCode::BAD_REQUEST,"Review the exact local executable and arguments before saving this trusted server"); }
+pub async fn register_profile(
+    State(state): State<AppState>,
+    Json(request): Json<RegisterProfile>,
+) -> Response {
+    if !request.reviewed {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "Review the exact local executable and arguments before saving this trusted server",
+        );
+    }
     match state.mcp_profiles.save(request.profile) {
         Ok(profile) => Json(json!({"profile":profile})).into_response(),
-        Err(message) => error(StatusCode::BAD_REQUEST,&message),
+        Err(message) => error(StatusCode::BAD_REQUEST, &message),
     }
 }
-pub async fn remove_profile(State(state): State<AppState>, Json(request): Json<RemoveProfile>) -> Response {
+pub async fn remove_profile(
+    State(state): State<AppState>,
+    Json(request): Json<RemoveProfile>,
+) -> Response {
     match state.mcp_profiles.remove(&request.id) {
         Ok(()) => Json(json!({"removed":true})).into_response(),
-        Err(message) => error(StatusCode::BAD_REQUEST,&message),
+        Err(message) => error(StatusCode::BAD_REQUEST, &message),
     }
 }
 #[derive(Deserialize)]
-#[serde(rename_all="camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConnectRequest {
     transport: String,
     endpoint: Option<String>,
@@ -581,10 +599,20 @@ async fn session(state: &AppState, id: &str) -> Result<Arc<Mutex<Connection>>, S
         .cloned()
         .ok_or_else(|| "MCP connection expired or disconnected; connect again".into())
 }
-fn ensure_profile_current(state:&AppState,connection:&Connection)->Result<(),String>{
-    if let Some((id,revision))=&connection.profile_binding {
-        if !state.mcp_profiles.get(id).is_some_and(|p| &p.revision==revision && std::fs::canonicalize(&p.executable).ok().and_then(|path|path.to_str().map(str::to_owned)).as_deref()==Some(p.resolved_executable.as_str())) {
-            return Err("This server profile changed or was removed. Reconnect and review its tools again.".into());
+fn ensure_profile_current(state: &AppState, connection: &Connection) -> Result<(), String> {
+    if let Some((id, revision)) = &connection.profile_binding {
+        if !state.mcp_profiles.get(id).is_some_and(|p| {
+            &p.revision == revision
+                && std::fs::canonicalize(&p.executable)
+                    .ok()
+                    .and_then(|path| path.to_str().map(str::to_owned))
+                    .as_deref()
+                    == Some(p.resolved_executable.as_str())
+        }) {
+            return Err(
+                "This server profile changed or was removed. Reconnect and review its tools again."
+                    .into(),
+            );
         }
     }
     Ok(())
@@ -596,7 +624,7 @@ pub async fn tools(
     let result = async {
         let connection = session(&state, &request.connection_id).await?;
         let mut connection = connection.lock().await;
-        ensure_profile_current(&state,&connection)?;
+        ensure_profile_current(&state, &connection)?;
         refresh(&mut connection).await
     }
     .await;
@@ -743,8 +771,8 @@ mod tests {
         use axum::body::{to_bytes, Body};
         use axum::http::Request;
         use tower::ServiceExt;
-        let temp=tempfile::tempdir().unwrap();
-        let script=temp.path().join("mcp_fixture.py");
+        let temp = tempfile::tempdir().unwrap();
+        let script = temp.path().join("mcp_fixture.py");
         std::fs::write(&script, r#"import sys, json
 for line in sys.stdin:
     msg=json.loads(line)
@@ -756,36 +784,120 @@ for line in sys.stdin:
     else: result={}
     print(json.dumps({'jsonrpc':'2.0','id':msg['id'],'result':result}),flush=True)
 "#).unwrap();
-        let python=std::fs::canonicalize("/usr/bin/python3").unwrap();
-        let mut state=AppState::new("fixture-token".into(),super::super::default_origins());
-        state.integrations=Arc::new(Hub{sessions:Mutex::new(HashMap::new()),ledger_dir:Ok(temp.path().join("ledger"))});
-        state.mcp_profiles=Arc::new(super::super::mcp_profiles::Registry::load(Some(temp.path().join("profiles.json"))));
-        let app=super::super::router(state);
-        let req=|path:&str, body:Value| Request::builder().method("POST").uri(path).header("origin","http://localhost:5173").header("authorization","Bearer fixture-token").header("content-type","application/json").body(Body::from(body.to_string())).unwrap();
-        let profile=json!({"id":"cascadeur","name":"Cascadeur test","executable":python,"args":["-I",script]});
-        let denied=app.clone().oneshot(req("/integrations/mcp/profiles",json!({"profile":profile,"reviewed":false}))).await.unwrap();
-        assert_eq!(denied.status(),StatusCode::BAD_REQUEST);
-        let saved=app.clone().oneshot(req("/integrations/mcp/profiles",json!({"profile":profile,"reviewed":true}))).await.unwrap();
-        assert_eq!(saved.status(),StatusCode::OK);
-        let connected=app.clone().oneshot(req("/integrations/mcp/connect",json!({"transport":"custom-stdio","profileId":"cascadeur"}))).await.unwrap();
-        assert_eq!(connected.status(),StatusCode::OK);
-        let value:Value=serde_json::from_slice(&to_bytes(connected.into_body(),MAX_RESPONSE).await.unwrap()).unwrap();
-        assert_eq!(value["tools"][0]["name"],"pose");assert_eq!(value["serverFingerprint"].as_str().unwrap().len(),64);
-        let id=value["connectionId"].as_str().unwrap();
+        let python_target = std::fs::canonicalize("/usr/bin/python3").unwrap();
+        let python = temp.path().join("venv-python");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&python_target, &python).unwrap();
+        #[cfg(not(unix))]
+        let python = python_target.clone();
+        let mut state = AppState::new("fixture-token".into(), super::super::default_origins());
+        state.integrations = Arc::new(Hub {
+            sessions: Mutex::new(HashMap::new()),
+            ledger_dir: Ok(temp.path().join("ledger")),
+        });
+        state.mcp_profiles = Arc::new(super::super::mcp_profiles::Registry::load(Some(
+            temp.path().join("profiles.json"),
+        )));
+        let app = super::super::router(state);
+        let req = |path: &str, body: Value| {
+            Request::builder()
+                .method("POST")
+                .uri(path)
+                .header("origin", "http://localhost:5173")
+                .header("authorization", "Bearer fixture-token")
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap()
+        };
+        let profile = json!({"id":"cascadeur","name":"Cascadeur test","executable":python,"args":["-I",script]});
+        let denied = app
+            .clone()
+            .oneshot(req(
+                "/integrations/mcp/profiles",
+                json!({"profile":profile,"reviewed":false}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(denied.status(), StatusCode::BAD_REQUEST);
+        let saved = app
+            .clone()
+            .oneshot(req(
+                "/integrations/mcp/profiles",
+                json!({"profile":profile,"reviewed":true}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(saved.status(), StatusCode::OK);
+        let connected = app
+            .clone()
+            .oneshot(req(
+                "/integrations/mcp/connect",
+                json!({"transport":"custom-stdio","profileId":"cascadeur"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(connected.status(), StatusCode::OK);
+        let value: Value =
+            serde_json::from_slice(&to_bytes(connected.into_body(), MAX_RESPONSE).await.unwrap())
+                .unwrap();
+        assert_eq!(value["tools"][0]["name"], "pose");
+        assert_eq!(value["serverFingerprint"].as_str().unwrap().len(), 64);
+        let id = value["connectionId"].as_str().unwrap();
         let response=app.clone().oneshot(req("/integrations/mcp/call",json!({"connectionId":id,"name":"pose","arguments":{},"requestId":"pose-once","approved":true}))).await.unwrap();
-        assert_eq!(response.status(),StatusCode::OK);
+        assert_eq!(response.status(), StatusCode::OK);
         let duplicate=app.clone().oneshot(req("/integrations/mcp/call",json!({"connectionId":id,"name":"pose","arguments":{},"requestId":"pose-once","approved":true}))).await.unwrap();
-        assert_eq!(duplicate.status(),StatusCode::BAD_REQUEST);
-        let updated=app.clone().oneshot(req("/integrations/mcp/profiles",json!({"profile":profile,"reviewed":true}))).await.unwrap();
-        assert_eq!(updated.status(),StatusCode::OK);
+        assert_eq!(duplicate.status(), StatusCode::BAD_REQUEST);
+        let updated = app
+            .clone()
+            .oneshot(req(
+                "/integrations/mcp/profiles",
+                json!({"profile":profile,"reviewed":true}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(updated.status(), StatusCode::OK);
         let stale=app.clone().oneshot(req("/integrations/mcp/call",json!({"connectionId":id,"name":"pose","arguments":{},"requestId":"after-edit","approved":true}))).await.unwrap();
-        assert_eq!(stale.status(),StatusCode::BAD_REQUEST);
-        let text=String::from_utf8(to_bytes(stale.into_body(),MAX_RESPONSE).await.unwrap().to_vec()).unwrap();
+        assert_eq!(stale.status(), StatusCode::BAD_REQUEST);
+        let text = String::from_utf8(
+            to_bytes(stale.into_body(), MAX_RESPONSE)
+                .await
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap();
         assert!(text.contains("profile changed"));
-        let reconnected=app.clone().oneshot(req("/integrations/mcp/connect",json!({"transport":"custom-stdio","profileId":"cascadeur"}))).await.unwrap();
-        assert_eq!(reconnected.status(),StatusCode::OK);
-        let next:Value=serde_json::from_slice(&to_bytes(reconnected.into_body(),MAX_RESPONSE).await.unwrap()).unwrap();
-        assert_ne!(value["serverFingerprint"],next["serverFingerprint"]);
+        let reconnected = app
+            .clone()
+            .oneshot(req(
+                "/integrations/mcp/connect",
+                json!({"transport":"custom-stdio","profileId":"cascadeur"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(reconnected.status(), StatusCode::OK);
+        let next: Value = serde_json::from_slice(
+            &to_bytes(reconnected.into_body(), MAX_RESPONSE)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_ne!(value["serverFingerprint"], next["serverFingerprint"]);
+        #[cfg(unix)]
+        {
+            std::fs::remove_file(&python).unwrap();
+            std::os::unix::fs::symlink("/usr/bin/true", &python).unwrap();
+            let stale=app.clone().oneshot(req("/integrations/mcp/call",json!({"connectionId":next["connectionId"],"name":"pose","arguments":{},"requestId":"repointed","approved":true}))).await.unwrap();
+            assert_eq!(stale.status(), StatusCode::BAD_REQUEST);
+            let retry = app
+                .clone()
+                .oneshot(req(
+                    "/integrations/mcp/connect",
+                    json!({"transport":"custom-stdio","profileId":"cascadeur"}),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(retry.status(), StatusCode::BAD_REQUEST);
+        }
     }
     #[tokio::test]
     async fn real_http_mcp_discovery_and_selected_call() {

@@ -66,7 +66,10 @@ fn validate_saved(profile: &Profile) -> Result<(), String> {
         &profile.executable,
         &profile.args,
     )?;
-    if !Path::new(&profile.resolved_executable).is_absolute() || profile.resolved_executable.len()>4096 || profile.resolved_executable.chars().any(char::is_control) {
+    if !Path::new(&profile.resolved_executable).is_absolute()
+        || profile.resolved_executable.len() > 4096
+        || profile.resolved_executable.chars().any(char::is_control)
+    {
         return Err("Invalid MCP profile executable target".into());
     }
     let revision =
@@ -173,7 +176,10 @@ impl Registry {
             id: input.id,
             name: input.name,
             executable: input.executable,
-            resolved_executable: canonical.to_str().ok_or("The executable target is not valid UTF-8")?.to_string(),
+            resolved_executable: canonical
+                .to_str()
+                .ok_or("The executable target is not valid UTF-8")?
+                .to_string(),
             args: input.args,
             revision: uuid::Uuid::new_v4().to_string(),
         };
