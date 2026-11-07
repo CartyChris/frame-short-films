@@ -80,7 +80,7 @@ const descriptions:Record<string,string>={
  'Play film':'Play the film from the current position.', 'Pause film':'Pause playback at the current position.',
  'Export film':'Export a film, a project backup, or a recording.', 'Connect a model':'Choose a model provider and connection.',
  'Duplicate selected scene':'Make an editable copy of the selected scene.', 'Split scene at playhead':'Split the selected clip at the current playhead.',
- 'Save a portable backup':'Export the film, its media, and saved drafts.',
+ 'Save a portable backup':'Export this film, saved drafts, and the entire shared media library.',
  'Remove scene':'Remove this scene from the timeline. You can undo the edit.', 'New 3D shot':'Add an editable 3D shot.',
  'Produce this film':'Start the reviewed plan with the selected connected model.',
 };
