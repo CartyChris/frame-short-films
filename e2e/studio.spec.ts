@@ -15,7 +15,7 @@ test('studio transport, theme, resize, layers, sound and portable export',async(
  await page.getByRole('button',{name:'Sound',exact:true}).click();await page.getByRole('button',{name:'Compose a soundtrack'}).click();await expect(page.locator('.audio-clip')).toHaveCount(1);
  await page.locator('.app > input[type=file][multiple]').setInputFiles({name:'sample.svg',mimeType:'image/svg+xml',buffer:Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><circle cx="10" cy="10" r="9" fill="orange"/></svg>')});
  await page.getByRole('button',{name:'Add sample.svg to timeline'}).click();await expect(page.locator('.layer-row').filter({hasText:'sample.svg'})).toHaveCount(1);
- await page.getByRole('button',{name:'Export film',exact:true}).click();const downloadPromise=page.waitForEvent('download');await page.getByRole('button',{name:/Single-file HTML/}).click();const downloaded=await downloadPromise;const path=test.info().outputPath('exported.html');await downloaded.saveAs(path);const exported=await page.context().newPage();await exported.route(/^https?:\/\//,r=>r.abort());await exported.goto('file://'+path);await exported.waitForFunction(()=>!!(window as any).film);expect(await exported.evaluate(()=>(window as any).film.duration)).toBe(30);await exported.close();await page.getByRole('button',{name:'Close export'}).click();
+ await page.getByRole('button',{name:'Export film',exact:true}).click();const downloadPromise=page.waitForEvent('download');await page.getByRole('button',{name:/Single-file HTML/}).click();const downloaded=await downloadPromise;const path=test.info().outputPath('exported.html');await downloaded.saveAs(path);const exported=await page.context().newPage();await exported.route(/^https?:\/\//,r=>r.abort());await exported.goto('file://'+path);await exported.waitForFunction(()=>!!(window as any).film);expect(await exported.evaluate(()=>(window as any).film.duration)).toBe(10);await exported.close();await page.getByRole('button',{name:'Close export'}).click();
  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.getByRole('button',{name:'Create',exact:true}).click();await expect(page.getByRole('button',{name:'Create with AI'})).toBeVisible();
  expect(errors).toEqual([]);
 });
@@ -35,16 +35,16 @@ test('cutoff survives reload, provider handoff continues exact code, prior versi
  const downloadPromise=page.waitForEvent('download');await page.getByRole('button',{name:'Save a portable backup'}).click();const d=await downloadPromise;const path=await d.path();const fs=await import('node:fs/promises');const archive=JSON.parse(await fs.readFile(path!,'utf8'));expect(archive.runs.length).toBe(2);expect(archive.chunks.map((c:any)=>c.text).join('')).toContain('preserved');expect(JSON.stringify(archive)).not.toContain('test-key-not-a-real-credential');
  await page.locator('.app > input[type=file][multiple]').setInputFiles({name:'restore.frame.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(archive))});await expect(page.locator('.recovery-card')).toHaveCount(2);
 });
-test('adapted reference is offline and supports the editor clock',async({page})=>{await waitStudio(page);await page.getByRole('button',{name:'Add reference film'}).click();await expect(page.locator('.scene-clip')).toHaveCount(5);await page.locator('.scene-clip').last().click();await page.waitForTimeout(900);await page.getByRole('button',{name:'Play film',exact:true}).click();await page.waitForTimeout(600);await page.getByRole('button',{name:'Pause film',exact:true}).click();await expect(page.locator('.time-total')).toContainText('01:00');});
+test('adapted reference is offline and supports the editor clock',async({page})=>{await waitStudio(page);await page.getByText('Browse example scenes').click();await page.getByRole('button',{name:'Add reference film'}).click();await expect(page.locator('.scene-clip')).toHaveCount(2);await page.locator('.scene-clip').last().click();await page.waitForTimeout(900);await page.getByRole('button',{name:'Play film',exact:true}).click();await page.waitForTimeout(600);await page.getByRole('button',{name:'Pause film',exact:true}).click();await expect(page.locator('.time-total')).toContainText('00:40');});
 test('adding and editing a scene keeps the matching preview playhead',async({page})=>{
  await waitStudio(page);
  await expect(page.locator('.timecode')).toContainText('00:00');
- await page.locator('.template-card').first().click();
+ await page.getByText('Browse example scenes').click();await page.locator('.template-card').first().click();
  await expect(page.locator('.scene-clip.selected')).toContainText('Paper & light');
- await expect.poll(async()=>page.locator('.timecode').textContent()).toContain('00:30');
+ await expect.poll(async()=>page.locator('.timecode').textContent()).toContain('00:10');
  await page.locator('.inspector-tabs').getByRole('button',{name:'Scene',exact:true}).click();
  await page.getByLabel('Scene title',{exact:true}).fill('New story');
  await expect(page.locator('.scene-clip.selected')).toContainText('New story');
  await page.waitForTimeout(500);
- await expect(page.locator('.timecode')).toContainText('00:30');
+ await expect(page.locator('.timecode')).toContainText('00:10');
 });

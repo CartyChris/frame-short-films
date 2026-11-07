@@ -41,12 +41,12 @@ test('edits a score, renders it, saves an audio layer, and keeps the editable so
   const source=await page.evaluate(()=>(window as any).project.soundtrack);expect(source.project.channels.length).toBeGreaterThan(3);
   const grid=page.getByRole('application',{name:'Piano roll note grid'});await grid.click({position:{x:130,y:550}});
   await expect(page.getByLabel('Pitch',{exact:true})).toBeVisible();await page.getByLabel('Pitch',{exact:true}).fill('50');
-  await page.getByRole('button',{name:'Preview score',exact:true}).click();await page.getByRole('button',{name:'Add to film',exact:true}).waitFor();await mkdir('../../work/frame-3',{recursive:true});await page.locator('.sound-scroll').evaluate(el=>el.scrollTop=0);await page.screenshot({path:'../../work/frame-3/sound-studio-score-desktop.png'});await page.getByRole('button',{name:'Add to film',exact:true}).click();
+  await page.getByRole('button',{name:'Preview score',exact:true}).click();await page.getByRole('button',{name:'Add to film',exact:true}).waitFor();await mkdir('../../work/frame-6',{recursive:true});await page.locator('.sound-scroll').evaluate(el=>el.scrollTop=0);await page.screenshot({path:'../../work/frame-6/sound-studio-score-desktop.png'});await page.getByRole('button',{name:'Add to film',exact:true}).click();
   await page.getByRole('button',{name:'Film mix',exact:true}).click();await expect(page.locator('.sound-film-track')).toHaveCount(1);
   await page.getByLabel('Start (s)',{exact:true}).fill('2.5');await page.reload();
   await page.getByRole('button',{name:'Film mix',exact:true}).click();await expect(page.getByLabel('Start (s)',{exact:true})).toHaveValue('2.5');
   const result=await page.evaluate(()=>(window as any).project);expect(result.soundtrack.project.patterns.length).toBeGreaterThan(0);expect(result.audio[0].duration).toBeGreaterThan(0);expect(errors).toEqual([]);
-  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:'../../work/frame-3/sound-studio-mix-mobile.png'});
+  await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:'../../work/frame-6/sound-studio-mix-mobile.png'});
 });
 
 

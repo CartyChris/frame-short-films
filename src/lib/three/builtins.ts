@@ -1,6 +1,7 @@
 import * as T from 'three';
 import type {ModelAsset,ThreeInstance} from './types';
 import {builtInModels,normalizeAppearance} from './document';
+import {characterMotion,type RigJoint} from './character-motion';
 const mat=(color:string,roughness=.85)=>new T.MeshStandardMaterial({color,roughness});
 function mesh(g:T.BufferGeometry,m:T.Material,parent:T.Object3D,x=0,y=0,z=0){const o=new T.Mesh(g,m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;parent.add(o);return o}
 const sphere=(r:number,m:T.Material,p:T.Object3D,x=0,y=0,z=0)=>mesh(new T.SphereGeometry(r,16,12),m,p,x,y,z);
@@ -33,12 +34,12 @@ export function makeBuiltin(model:ModelAsset):T.Group{
  if(type==='rock'){const rock=mesh(new T.IcosahedronGeometry(.7,1),mat('#8d9692'),g,0,.35);rock.scale.set(1.1,.65,.8);rock.rotation.set(.1,.4,.2)}
  return g;
 }
-export function animateBuiltin(object:T.Object3D,instance:ThreeInstance,time:number){const phase=time*instance.animation.speed+instance.animation.phase,preset=instance.animation.preset;const get=(name:string)=>object.getObjectByName('rig_'+name);const body=get('body');if(!body)return;const wave=phase*5.8;const hips=get('hips')!,torso=get('torso')!,head=get('head')!;hips.position.y=.88;hips.rotation.set(0,0,0);torso.rotation.set(0,0,0);head.rotation.set(0,0,0);for(const tag of ['L','R'])for(const part of ['arm','elbow','leg','knee'])get(part+tag)!.rotation.set(0,0,0);
- if(preset==='none')return;
- hips.position.y+=Math.sin(phase*2)*.012;head.rotation.y=Math.sin(phase*.8)*.1;
- if(preset==='walk'){hips.position.y+=Math.abs(Math.sin(wave))*.035;torso.rotation.y=Math.sin(wave)*.06;for(const side of [-1,1]){const tag=side<0?'L':'R';get('leg'+tag)!.rotation.x=Math.sin(wave)*side*.5;get('knee'+tag)!.rotation.x=Math.max(0,-Math.sin(wave)*side)*.55;get('arm'+tag)!.rotation.x=-Math.sin(wave)*side*.4;get('elbow'+tag)!.rotation.x=-.15}}
- if(preset==='wave'){get('armR')!.rotation.set(-.15,0,2.1);get('elbowR')!.rotation.set(0,Math.sin(phase*5)*.3,.4+Math.sin(phase*5)*.4);head.rotation.z=-.1;get('armL')!.rotation.z=.12}
- if(preset==='dance'){hips.rotation.y=Math.sin(phase*2)*.3;hips.position.y+=Math.abs(Math.sin(phase*4))*.1;torso.rotation.z=Math.sin(phase*4)*.1;get('armL')!.rotation.z=.8+Math.sin(phase*4)*.4;get('armR')!.rotation.z=-.8+Math.sin(phase*4)*.4;get('elbowL')!.rotation.x=-.6;get('elbowR')!.rotation.x=-.6;get('legL')!.rotation.x=Math.sin(phase*4)*.2;get('legR')!.rotation.x=-Math.sin(phase*4)*.2}
+export function animateBuiltin(object:T.Object3D,instance:ThreeInstance,time:number){
+ const get=(name:string)=>object.getObjectByName('rig_'+name),body=get('body');if(!body)return;
+ const hips=get('hips')!,torso=get('torso')!,head=get('head')!;hips.position.y=.88;hips.rotation.set(0,0,0);torso.rotation.set(0,0,0);head.rotation.set(0,0,0);
+ for(const tag of ['L','R'])for(const part of ['arm','elbow','leg','knee'])get(part+tag)!.rotation.set(0,0,0);
+ const offsets=characterMotion(instance.animation.preset,time*instance.animation.speed+instance.animation.phase);
+ for(const [joint,pose] of Object.entries(offsets) as [RigJoint,NonNullable<typeof offsets[RigJoint]>][]){const node=joint==='body'?hips:get(joint);if(!node)continue;node.position.y+=pose.lift||0;node.rotation.x+=pose.x||0;node.rotation.y+=pose.y||0;node.rotation.z+=pose.z||0}
 }
 export function makeEnvironment(preset:string,groundColor:string):T.Group{const g=new T.Group();g.name='Scenery';const ground=mat(groundColor);const island=cyl(11,10.5,.5,ground,g,0,-.3);island.receiveShadow=true;const path=mesh(new T.TorusGeometry(4.6,.55,4,80),mat('#d2c6a6'),g,0,-.015);path.rotation.x=-Math.PI/2;path.scale.y=.7;path.scale.z=.045;const rand=(i:number)=>{const x=Math.sin(i*127.1+31.7)*43758.5453;return x-Math.floor(x)};
  if(preset==='studio'){path.visible=false;island.scale.set(4,1,4);return g}

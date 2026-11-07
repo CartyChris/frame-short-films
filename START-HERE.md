@@ -1,6 +1,6 @@
-# Frame 5 — Short Films AI Harness
+# Frame 6 — Short Films AI Harness
 
-[Open the hosted studio](https://frame-short-films.vercel.app). The included source also runs locally and builds a macOS app. The private source repository is [CartyChris/frame-short-films](https://github.com/CartyChris/frame-short-films). Release-specific deployment and installer checks are in [VERIFICATION.md](docs/VERIFICATION.md).
+[Open the hosted studio](https://frame-short-films.vercel.app). The included source also runs locally and builds a macOS app. The source repository is [CartyChris/frame-short-films](https://github.com/CartyChris/frame-short-films). Release-specific deployment and installer checks are in [VERIFICATION.md](docs/VERIFICATION.md).
 
 ## New simulation tools
 
@@ -35,11 +35,11 @@ Canonical models preserve their underlying identity. Image/video references and 
 
 ## Release files
 
-Frame 5 release packages use these names:
+Frame 6 release packages use these names:
 
-- `Frame-5-Short-Films-AI-Harness.zip` — source, Vercel configuration, native build code, local companion, integrations, documentation and included assets.
-- `Frame-5-macOS-Apple-Silicon.dmg` — the separate Apple Silicon installer. Check the release verification for its signing/notarization and runtime acceptance status.
-- `Frame-5-SHA256SUMS.txt` — checksums for the supplied release artifacts.
+- `Frame-6-Short-Films-AI-Harness.zip` — source, Vercel configuration, native build code, local companion, integrations, documentation and included assets.
+- `Frame-6-macOS-Apple-Silicon.dmg` — the separate Apple Silicon installer. Check the release verification for its signing/notarization and runtime acceptance status.
+- `Frame-6-SHA256SUMS.txt` — checksums for the supplied release artifacts.
 
 Use the release folder's example HTML/project/video files as named there. Prior Frame releases remain separate; do not mistake an older installer for this release. [README.md](README.md) contains complete setup, provider, export and format details. [VERIFICATION.md](docs/VERIFICATION.md) records the exact current **PASS**, **FAIL** and **NOT RUN** results, including paid-account and physical-device boundaries.
 

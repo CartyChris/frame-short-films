@@ -16,3 +16,4 @@
 .director-message-label{text-transform:none;letter-spacing:.02em;font-size:10px}
 .director-proposal{background:var(--panel)}
 .director-proposal-heading h3,.director-brief h2{font-size:22px;font-weight:600;letter-spacing:-.02em}
+.director-example-disclosure{width:min(100%,470px);margin:0 auto 16px;text-align:left}.director-example-disclosure summary{cursor:pointer;color:var(--muted);font-size:12px;padding:8px 0}.director-example-disclosure summary:hover{color:var(--text)}

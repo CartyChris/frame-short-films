@@ -1,0 +1,9 @@
+import {describe,it,expect} from 'vitest';
+import {characterMotion} from '../src/lib/three/character-motion';
+import {makeBuiltin,animateBuiltin} from '../src/lib/three/builtins';
+import {builtInModels,createThreeDocument} from '../src/lib/three/document';
+import {createProceduralModel,makeProceduralModel,animateProceduralModel} from '../src/lib/three/procedural';
+describe('character performance',()=>{
+ it('uses coordinated opposite limbs and a smooth bounded gait',()=>{const pose=characterMotion('walk',.21);expect(pose.legL!.x! * pose.legR!.x!).toBeLessThan(0);expect(pose.armL!.x! * pose.legL!.x!).toBeLessThan(0);for(const t of [0,.2,1,2]){const a=characterMotion('walk',t).body!.lift!,b=characterMotion('walk',t+.0001).body!.lift!;expect(a).toBeGreaterThanOrEqual(0);expect(a).toBeLessThanOrEqual(.036);expect(Math.abs(a-b)).toBeLessThan(.0001)}});
+ it('repeats arbitrary seeks and restores both built-in and procedural rigs when motion is disabled',()=>{const doc=createThreeDocument('studio',5),actor={...doc.instances[0],animation:{preset:'wave' as const,speed:1,phase:0}},builtin=makeBuiltin(builtInModels.find(m=>m.builtin==='ava')!),model={id:'test-robot',name:'Robot',procedural:createProceduralModel('robot')},robot=makeProceduralModel(model);const sample=(o:any,n:string)=>o.getObjectByName(n).rotation.toArray().slice(0,3);animateBuiltin(builtin,actor,2);animateProceduralModel(robot,actor,2);const a=sample(builtin,'rig_elbowR'),b=sample(robot,'proc_elbowR');animateBuiltin(builtin,actor,.3);animateProceduralModel(robot,actor,.3);animateBuiltin(builtin,actor,2);animateProceduralModel(robot,actor,2);expect(sample(builtin,'rig_elbowR')).toEqual(a);expect(sample(robot,'proc_elbowR')).toEqual(b);const off={...actor,animation:{...actor.animation,preset:'none' as const}};animateBuiltin(builtin,off,4);animateProceduralModel(robot,off,4);expect(sample(builtin,'rig_elbowR')).toEqual([0,0,0]);expect(sample(robot,'proc_elbowR')).toEqual([0,0,0])});
+});

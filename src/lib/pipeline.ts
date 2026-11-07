@@ -97,8 +97,9 @@ export async function runPipeline(ctx:Context){
    }else{
     let queue=current().production?.find(q=>q.id===job().queueId);if(!queue)throw new Error('This production needs a saved shot plan.');
     if(queue.status==='draft'){
-     if(job().settings.assembleOnly&&queue.scope==='new'){for(const scene of current().scenes)await Store.addRevision(projectId,scene.id,scene.code,'Before automatic film assembly',scene);}
-     await commit(p=>{const next=approveProductionPlan(p,queue!.id);if(job().settings.assembleOnly&&queue!.scope==='new'){const ids=new Set(next.production!.find(q=>q.id===queue!.id)!.items.map(i=>i.sceneId));next.scenes=next.scenes.filter(s=>ids.has(s.id));}return next});queue=current().production!.find(q=>q.id===queue!.id)!;
+     const replace=job().settings.assembleOnly&&queue.scope==='new',before=replace?structuredClone(current().scenes):undefined;
+     if(before){for(const scene of before)await Store.addRevision(projectId,scene.id,scene.code,'Before automatic film assembly',scene);}
+     await commit(p=>{if(before&&JSON.stringify(p.scenes)!==JSON.stringify(before))throw new Error('The film changed while its previous scenes were being saved. Your edits are preserved; resume production to review them.');const next=approveProductionPlan(p,queue!.id);if(replace){const ids=new Set(next.production!.find(q=>q.id===queue!.id)!.items.map(i=>i.sceneId));next.scenes=next.scenes.filter(s=>ids.has(s.id));}return next});queue=current().production!.find(q=>q.id===queue!.id)!;
     }
     if(task.kind==='design'){
      const characters=taskNow(task).basis?JSON.parse(taskNow(task).basis!):(current().story?.characters||[]).filter(c=>!current().castDesigns?.[c.id]&&!c.referenceAssetIds.some(id=>(current().models||[]).some(m=>m.id===id)));const designIds:string[]=characters.map((c:{id:string})=>c.id);if(!taskNow(task).basis)await taskUpdate(task,{basis:JSON.stringify(characters)});

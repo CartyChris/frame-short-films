@@ -1,4 +1,5 @@
 import * as T from 'three';
+import {characterMotion,type RigJoint} from './character-motion';
 import type {ModelAsset,ProceduralJoint,ProceduralModel,ProceduralPart,ThreeInstance,Vec3} from './types';
 export const PROCEDURAL_SHAPES=['box','sphere','cylinder','cone','torus'] as const;
 export const PROCEDURAL_JOINTS=['body','head','armL','armR','elbowL','elbowR','legL','legR','kneeL','kneeR'] as const;
@@ -21,10 +22,9 @@ export function makeProceduralModel(model:ModelAsset):T.Group {
 }
 export function animateProceduralModel(object:T.Object3D,instance:ThreeInstance,time:number){
  const joints=new Map<ProceduralJoint,T.Object3D>();object.traverse(node=>{const rest=node.userData.proceduralRest;if(!rest)return;node.position.fromArray(rest.position);node.rotation.set(...rest.rotation as Vec3);node.scale.fromArray(rest.scale);if(node.userData.proceduralJoint)joints.set(node.userData.proceduralJoint,node)});if(!joints.size||instance.animation.preset==='none')return;
- const phase=time*instance.animation.speed+instance.animation.phase,preset=instance.animation.preset,cycle=phase*5.8;const rotate=(joint:ProceduralJoint,axis:'x'|'y'|'z',value:number)=>{const node=joints.get(joint);if(node)node.rotation[axis]+=value};const body=joints.get('body');if(body)body.position.y+=Math.sin(phase*2)*.014;rotate('head','y',Math.sin(phase*.8)*.1);
- if(preset==='walk'){if(body)body.position.y+=Math.abs(Math.sin(cycle))*.035;for(const tag of ['L','R'] as const){const sign=tag==='L'?-1:1;rotate(('leg'+tag) as ProceduralJoint,'x',Math.sin(cycle)*sign*.5);rotate(('knee'+tag) as ProceduralJoint,'x',Math.max(0,-Math.sin(cycle)*sign)*.55);rotate(('arm'+tag) as ProceduralJoint,'x',-Math.sin(cycle)*sign*.4);rotate(('elbow'+tag) as ProceduralJoint,'x',-.15)}}
- if(preset==='wave'){rotate('armR','z',2.1);rotate('armR','x',-.15);rotate('elbowR','z',.4+Math.sin(phase*5)*.4);rotate('elbowR','y',Math.sin(phase*5)*.3);rotate('head','z',-.1)}
- if(preset==='dance'){if(body){body.position.y+=Math.abs(Math.sin(phase*4))*.1;body.rotation.y+=Math.sin(phase*2)*.25}rotate('armL','z',-.7+Math.sin(phase*4)*.4);rotate('armR','z',.7+Math.sin(phase*4)*.4);rotate('elbowL','x',-.6);rotate('elbowR','x',-.6);rotate('legL','x',Math.sin(phase*4)*.2);rotate('legR','x',-Math.sin(phase*4)*.2)}
+ const offsets=characterMotion(instance.animation.preset,time*instance.animation.speed+instance.animation.phase);
+ for(const [joint,pose] of Object.entries(offsets) as [RigJoint,NonNullable<typeof offsets[RigJoint]>][]){const node=joints.get(joint as ProceduralJoint);if(!node)continue;node.position.y+=pose.lift||0;node.rotation.x+=pose.x||0;node.rotation.y+=pose.y||0;node.rotation.z+=pose.z||0}
+
 }
 export function createProceduralModel(preset:'robot'|'creature'|'prop'='robot'):ProceduralModel {
  const parts:ProceduralPart[]=[];const add=(id:string,name:string,shape:ProceduralPart['shape'],color:string,position:Vec3,scale:Vec3,extra:Partial<ProceduralPart>={})=>parts.push({id,name,shape,color,position,rotation:[0,0,0],scale,...extra});

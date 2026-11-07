@@ -14,7 +14,7 @@ try{
  await page.getByLabel('3D playhead').fill('3');await page.waitForTimeout(300);
  const prior=await page.locator('.s3-viewport canvas').screenshot();
  const cached=await page.evaluate(async()=>{const keys=await caches.keys();return (await Promise.all(keys.map(async k=>(await (await caches.open(k)).keys()).map(r=>r.url)))).flat()});
- assert(cached.some(url=>url.endsWith('/runtime/frame-three.js')));assert(cached.some(url=>url.endsWith('/runtime/frame-motion.js')));assert(cached.some(url=>url.endsWith('/film_core.wasm')));assert(!cached.some(url=>new URL(url).pathname.startsWith('/api/')));
+ assert(cached.some(url=>url.endsWith('/runtime/frame-three-v6.js')));assert(cached.some(url=>url.endsWith('/runtime/frame-motion.js')));assert(cached.some(url=>url.endsWith('/film_core.wasm')));assert(!cached.some(url=>new URL(url).pathname.startsWith('/api/')));
  await context.setOffline(true);await page.reload();await page.getByRole('button',{name:'3D studio'}).click();await page.locator('.s3-viewport canvas').waitFor();await page.getByRole('button',{name:'Film camera',exact:true}).click();await page.getByLabel('3D playhead').fill('3');await page.waitForTimeout(300);
  assert.equal(await page.getByLabel('Film name').inputValue(),'The Lantern Road');assert(prior.equals(await page.locator('.s3-viewport canvas').screenshot()));
  await page.getByRole('button',{name:'Play 3D scene'}).click();await page.waitForTimeout(300);await page.getByRole('button',{name:'Pause 3D scene'}).click();assert(!prior.equals(await page.locator('.s3-viewport canvas').screenshot()));

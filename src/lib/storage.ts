@@ -15,7 +15,11 @@ export const db=()=>dbPromise??=openDB(NAME,1,{upgrade(d){d.createObjectStore('p
 export const uid=()=>crypto.randomUUID();
 let saveChain:Promise<unknown>=Promise.resolve();
 export async function saveProject(project:Project){const snapshot=structuredClone(project);const next=saveChain.catch(()=>{}).then(async()=>{const d=await db();await d.put('projects',snapshot);});saveChain=next;await next;}
-export async function listProjects():Promise<Project[]>{return (await (await db()).getAll('projects')).sort((a,b)=>b.updatedAt-a.updatedAt)}
+export async function listProjects():Promise<Project[]>{const d=await db(),trashed=new Set<string>((await d.get('settings','trash-projects'))||[]);return (await d.getAll('projects')).filter((p:Project)=>!trashed.has(p.id)).sort((a:Project,b:Project)=>b.updatedAt-a.updatedAt)}
+// Trash hides objects without destroying drafts, shared media, or recoverable project data.
+export async function trashedItems(kind:'projects'|'assets'):Promise<string[]>{return (await (await db()).get('settings','trash-'+kind))||[]}
+export async function setTrashed(kind:'projects'|'assets',id:string,deleted:boolean){const d=await db();const tx=d.transaction('settings','readwrite');const key='trash-'+kind;const ids=new Set<string>((await tx.store.get(key))||[]);if(deleted)ids.add(id);else ids.delete(id);await tx.store.put([...ids],key);await tx.done}
+export async function listTrashed(kind:'projects'|'assets'):Promise<(Project|Asset)[]>{const d=await db(),ids=new Set(await trashedItems(kind));return (await d.getAll(kind)).filter((item:Project|Asset)=>ids.has(item.id))}
 export async function getProject(id:string):Promise<Project|undefined>{await saveChain;return (await db()).get('projects',id)}
 export async function putAsset(asset:Asset){await (await db()).put('assets',asset)}
 export async function getAssets():Promise<Asset[]>{return (await db()).getAll('assets')}
@@ -34,11 +38,12 @@ export async function getJobs(projectId:string):Promise<MediaJob[]>{return (awai
 export async function setSetting(key:string,value:unknown){await (await db()).put('settings',value,key)}
 export async function getSetting<T>(key:string):Promise<T|undefined>{return (await db()).get('settings',key)}
 export interface ProjectArchive {format:'frame-project';version:1;project:Project;assets:Asset[];runs:GenerationRun[];chunks:Chunk[];revisions:Revision[];jobs:MediaJob[]}
-export async function createArchive(project:Project):Promise<ProjectArchive>{const ids=new Set([...project.scenes.flatMap(s=>s.layers),...project.audio].map(l=>l.assetId));const assets=await getAssets();const runs=await getRuns(project.id);const chunks=(await Promise.all(runs.map(r=>getChunks(r.id)))).flat();return {format:'frame-project',version:1,project,assets,runs,chunks,revisions:await getRevisions(project.id),jobs:await getJobs(project.id)}}
+export async function createArchive(project:Project):Promise<ProjectArchive>{const ids=new Set([...project.scenes.flatMap(s=>s.layers),...project.audio].map(l=>l.assetId));const assets:Asset[]=await (await db()).getAll('assets');const runs=await getRuns(project.id);const chunks=(await Promise.all(runs.map(r=>getChunks(r.id)))).flat();return {format:'frame-project',version:1,project,assets,runs,chunks,revisions:await getRevisions(project.id),jobs:await getJobs(project.id)}}
 export function validateProject(value:unknown):asserts value is Project {
  if(!value||typeof value!=='object')throw new Error('Not a Frame project.');const p=value as Project;
  if(typeof p.id!=='string'||typeof p.name!=='string'||!Array.isArray(p.scenes)||!p.scenes.length||!Array.isArray(p.audio)||!p.settings)throw new Error('This project file is missing required fields.');
  if(p.scenes.length>10000)throw new Error('Split this project into reels of 10,000 scenes or fewer.');
+ if(p.hiddenModelIds!==undefined&&(!Array.isArray(p.hiddenModelIds)||p.hiddenModelIds.length>2000||p.hiddenModelIds.some(id=>typeof id!=='string')))throw new Error('Invalid removed 3D model list.');
  if(p.models!==undefined){if(!Array.isArray(p.models)||p.models.length>2000)throw new Error('Invalid 3D library.');const ids=new Set<string>();for(const m of p.models){if(!m||typeof m.id!=='string'||typeof m.name!=='string'||ids.has(m.id)||(!m.builtin&&!m.procedural&&(!m.data||!/^data:[^,]*;base64,/.test(m.data))))throw new Error('A model is missing its embedded bytes or identity.');if(m.procedural)m.procedural=validateProceduralModel(m.procedural);ids.add(m.id)}}
  const ids=new Set<string>();for(const s of p.scenes){if(typeof s.id!=='string'||ids.has(s.id)||typeof s.code!=='string'||!Number.isFinite(s.duration)||s.duration<=0||!Array.isArray(s.layers))throw new Error('A scene has invalid code, duration, or layers.');ids.add(s.id);if(s.three)s.three=normalizeThreeDocument(s.three,p.models||[]);if(s.motion)s.motion=normalizeMotionDocument(s.motion);if(s.continuity&&(!Array.isArray(s.continuity.characterIds)||!Array.isArray(s.continuity.locationIds)||!Array.isArray(s.continuity.mustInclude)||typeof s.continuity.stateAfter!=='object'))throw new Error('Invalid scene continuity.');}
  if(p.story&&(!Array.isArray(p.story.characters)||!Array.isArray(p.story.locations)||!Array.isArray(p.story.lockedFacts)||typeof p.story.initialState!=='object'))throw new Error('Invalid story bible.');

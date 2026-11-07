@@ -1,6 +1,6 @@
 # PulseForge source provenance
 
-Frame Sound Studio adapts the user's PulseForge Studio source, copied on 2026-11-06 from `/Users/chriscarty/Desktop/All Finished Apps/PulseForge-Studio`. The original application was not modified or launched. Selected pure producer and musical-time modules were executed in isolation for bounded parity checks. `source-hashes.json` records SHA-256 of each original module copied.
+Frame Sound Studio adapts the user's PulseForge Studio source, copied on 2026-11-06 from the user-provided PulseForge Studio source. The original application was not modified or launched. Selected pure producer and musical-time modules were executed in isolation for bounded parity checks. `source-hashes.json` records SHA-256 of each original module copied.
 
 Included: original procedural DSP, kits, synthesis presets/engines, mixer effects, musical time, note/pattern/project schema, seeded composition/director, composition-to-session mapping, event compilation, and WAV encoding. Adaptations remove the sampled-instrument registry and its downloads, add Frame bounds/validation, and use a separate bounded offline render wrapper and Frame persistence. Original UI/state/backend/secret storage were not copied. A small drum-role type is extracted from the original kit vocabulary.
 

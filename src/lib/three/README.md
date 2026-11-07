@@ -7,7 +7,7 @@ The editor, portable HTML films, and deterministic MP4 renderer use the same Thr
 - `Stage3D.tsx`: editor/camera viewport, orbit and transform controls. `onTransform` commits on release; orbit camera changes are separate from the canonical film camera. Root owns editing/keyframe UI and persistent project state.
 - `io.ts`: `importModel(files)` converts one primary model plus supplied dependencies into self-contained GLB; `exportSceneGlb(document,models,{start?,duration?})` exports actual geometry and baked animation. Pass a clip’s `sourceOffset` as `start` and its timeline duration to export a trimmed or split shot.
 - `html.ts`: await `initThreeRuntime()` at app startup. Native code can `setThreeRuntime(source)`. `buildThreeChildDocument` is pure and closure-free so the film player can generate isolated scene documents lazily.
-- Run `node scripts/build-three-runtime.mjs` after engine changes. The resulting `public/runtime/frame-three.js` ships offline; no CDN is required.
+- Run `node scripts/build-three-runtime.mjs` after engine changes. The resulting `public/runtime/frame-three-v6.js` ships offline; the unversioned copy supports older tabs; no CDN is required.
 
 ## Supported model inputs
 
@@ -22,3 +22,5 @@ The HTML/MP4 paths preserve titles, animated particles, sound and camera FOV cha
 ## Verification
 
 `npx vitest run tests/three.test.ts tests/three-browser.test.ts tests/film.test.ts tests/editing.test.ts` exercises canonical cast identity, normalization failures, deterministic keyframes, safe document serialization, single-copy long-film assets, real Chrome offline frame seeking, repeat-frame pixel identity, multi-scene playback, model conversion, supplied texture preservation and animated GLB roundtrip. Browser tests use `CHROME_PATH` or the macOS Chrome installation and report skipped if it is unavailable.
+
+When the runtime contract changes, advance its versioned filename together in the loader, service-worker core list, build script, exporter and PWA check. Existing open tabs may still depend on the previous version; never reuse a versioned filename for an incompatible runtime.
