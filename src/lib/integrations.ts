@@ -19,7 +19,7 @@ export interface BlenderManifest {format:'frame-blender';version:1;direction:'to
 export async function integrationRequest<T>(settings:CompanionSettings,path:string,body?:unknown):Promise<T>{
  const url=new URL(settings.url);if(url.protocol!=='http:'||!['127.0.0.1','localhost','[::1]'].includes(url.hostname)||url.username||url.password||url.search||url.hash||!url.port)throw new Error('Use your local companion address, such as http://127.0.0.1:4319.');
  if(!settings.token)throw new Error('Enter the local companion pairing token first.');
- if(!/^\/integrations\/(status|mcp\/(connect|tools|call|disconnect))$/.test(path))throw new Error('Unknown integration action.');
+ if(!/^\/integrations\/(status|mcp\/(connect|tools|call|receipt|disconnect))$/.test(path))throw new Error('Unknown integration action.');
  const response=await fetch(url.origin+path,{method:body===undefined?'GET':'POST',headers:{Authorization:'Bearer '+settings.token,...(body===undefined?{}:{'Content-Type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(130000)});
  const result=await response.json();if(!response.ok)throw new Error(result.error||`The companion returned ${response.status}.`);return result as T;
 }
