@@ -6,7 +6,8 @@ export type FreefieldInput={id:string;type:'text'|'textarea'|'number'|'slider'|'
 export type FreefieldApp={id:string;name:string;section:'image'|'video'|'audio'|'utility';summary:string;status:'ready'|'draft';runnable:boolean;inputs:FreefieldInput[];outputs:{type:'image'|'video'|'audio';label:string}[];presets:{id:string;label:string}[];models:{name:string;license:string;gated:boolean;optional:boolean;gb?:number}[];credits:string[]};
 export type FreefieldOutput={id:string;name:string;type:'image'|'video'|'audio'};
 /** Local request identities are never treated as Freefield server history IDs. */
-export type FreefieldJob={id:string;requestId:string;identity:'local'|'server';appId:string;status:'starting'|'queued'|'running'|'succeeded'|'failed'|'canceled'|'expired'|'lost'|'unknown';outputs:FreefieldOutput[];error?:string;acknowledged?:boolean};
+export type FreefieldSnapshot={values:Record<string,FreefieldScalar|FreefieldScalar[]>;files:Record<string,string>;preset?:string};
+export type FreefieldJob={id:string;requestId:string;identity:'local'|'server';appId:string;status:'starting'|'queued'|'running'|'succeeded'|'failed'|'canceled'|'expired'|'lost'|'unknown';outputs:FreefieldOutput[];snapshot?:FreefieldSnapshot;error?:string;acknowledged?:boolean};
 export type FreefieldSubmit={requestId:string;appId:string;values:FreefieldValues;preset?:string};
 export function unresolvedFreefieldRequest(job?:FreefieldJob){return !!job&&job.identity==='local'&&(job.status==='starting'||job.status==='unknown')&&!job.acknowledged}
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
@@ -17,6 +18,21 @@ const APP_ID=/^[a-z0-9]+(?:-[a-z0-9]+)*$/,INPUT_ID=/^[a-z][a-z0-9_]*$/;
 const types=['text','textarea','number','slider','select','toggle','seed','image','video','audio'] as const;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,SAFE_ID=/^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 
+export function normalizeFreefieldSnapshot(raw:unknown):FreefieldSnapshot{
+ if(!record(raw)||!record(raw.values)||!record(raw.files)||Object.keys(raw.values).length>80||Object.keys(raw.files).length>8)throw new Error('Invalid Freefield input snapshot.');
+ const values:FreefieldSnapshot['values']=Object.create(null),files:FreefieldSnapshot['files']=Object.create(null);let size=0;
+ for(const [key,value] of Object.entries(raw.values)){if(!id(key,INPUT_ID)||['constructor','prototype'].includes(key)||!(scalar(value)||Array.isArray(value)&&value.length<=200&&value.every(scalar)))throw new Error('Invalid Freefield saved input.');if((Array.isArray(value)?value:[value]).some(item=>typeof item==='string'&&item.length>16000))throw new Error('Freefield saved input is too large.');const bytes=JSON.stringify(value).length;size+=bytes;if(bytes>96002||size>128000)throw new Error('Freefield saved inputs are too large.');values[key]=value as FreefieldScalar|FreefieldScalar[]}
+ for(const [key,value] of Object.entries(raw.files)){if(!id(key,INPUT_ID)||['constructor','prototype'].includes(key)||Object.hasOwn(values,key)||!id(value,SAFE_ID))throw new Error('Invalid Freefield saved file reference.');files[key]=value as string}
+ if(raw.preset!==undefined&&!id(raw.preset,APP_ID))throw new Error('Invalid saved Freefield preset.');
+ return {values,files,...(raw.preset?{preset:raw.preset as string}:{})};
+}
+export function snapshotFreefieldRequest(request:FreefieldSubmit,files:Record<string,string>):FreefieldSnapshot{
+ const values:Record<string,FreefieldScalar|FreefieldScalar[]>=Object.create(null),needed=new Set<string>();
+ for(const [key,value] of Object.entries(request.values)){if(typeof File!=='undefined'&&value instanceof File)needed.add(key);else values[key]=value as FreefieldScalar|FreefieldScalar[]}
+ if(Object.keys(files).length!==needed.size||Object.keys(files).some(key=>!needed.has(key)))throw new Error('The original workflow files could not all be retained.');
+ return normalizeFreefieldSnapshot({values,files,...(request.preset?{preset:request.preset}:{})});
+}
+
 /** Bound and validate persisted job records before accepting them from a backup or adapter. */
 export function normalizeFreefieldJob(raw:unknown):FreefieldJob{
  if(!record(raw)||!id(raw.requestId,UUID)||!id(raw.appId,APP_ID)||!id(raw.id,SAFE_ID)||!['local','server'].includes(String(raw.identity))||!['starting','queued','running','succeeded','failed','canceled','expired','lost','unknown'].includes(String(raw.status))||!Array.isArray(raw.outputs)||raw.outputs.length>32)throw new Error('Invalid Freefield run record.');
@@ -24,7 +40,7 @@ export function normalizeFreefieldJob(raw:unknown):FreefieldJob{
  if(raw.acknowledged===true&&(raw.identity!=='local'||raw.status!=='unknown'))throw new Error('Invalid Freefield acknowledgement.');
  const outputs=raw.outputs.map(o=>{if(!record(o)||!id(o.id,SAFE_ID)||!text(o.name,200)||!['image','video','audio'].includes(String(o.type)))throw new Error('Invalid Freefield output.');return {id:o.id as string,name:text(o.name,200),type:o.type as FreefieldOutput['type']}});
  if(new Set(outputs.map(o=>o.id)).size!==outputs.length)throw new Error('Duplicate Freefield output.');
- return {id:raw.id as string,requestId:raw.requestId as string,identity:raw.identity as FreefieldJob['identity'],appId:raw.appId as string,status:raw.status as FreefieldJob['status'],outputs,...(text(raw.error,1000)?{error:text(raw.error,1000)}:{}),...(raw.acknowledged===true?{acknowledged:true}:{})};
+ return {id:raw.id as string,requestId:raw.requestId as string,identity:raw.identity as FreefieldJob['identity'],appId:raw.appId as string,status:raw.status as FreefieldJob['status'],outputs,...(raw.snapshot!==undefined?{snapshot:normalizeFreefieldSnapshot(raw.snapshot)}:{}),...(text(raw.error,1000)?{error:text(raw.error,1000)}:{}),...(raw.acknowledged===true?{acknowledged:true}:{})};
 }
 
 export function parseFreefieldCatalog(raw:unknown):{apps:FreefieldApp[];rejected:number}{
@@ -58,7 +74,7 @@ export function freefieldDefaults(app:FreefieldApp):FreefieldValues{
 export function validateFreefieldValues(app:FreefieldApp,values:FreefieldValues,preset?:string):void{
  if(preset&&!app.presets.some(p=>p.id===preset))throw new Error('Choose a listed preset.');
  if(Object.keys(values).some(k=>!app.inputs.some(i=>i.id===k)))throw new Error('Unknown workflow input.');
- for(const input of app.inputs){const v=values[input.id],empty=v===undefined||v===''||Array.isArray(v)&&v.length===0;
+ for(const input of app.inputs){const v=values[input.id],empty=v===undefined||v===''&&!(input.type==='select'&&input.options.some(o=>o.value===''))||Array.isArray(v)&&v.length===0;
   if(empty){if(input.required)throw new Error(`${input.label} is required.`);continue}
   if(input.type==='text'||input.type==='textarea'){if(typeof v!=='string'||v.length>16000)throw new Error(`${input.label} must be text of at most 16,000 characters.`)}
   else if(input.type==='toggle'){if(typeof v!=='boolean')throw new Error(`${input.label} must be on or off.`)}

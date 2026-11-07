@@ -7,8 +7,8 @@ async function mount(page:Page){
   const root=document.createElement('div');root.style.cssText='position:fixed;inset:0;z-index:99999;overflow:auto;background:#17191c;color:white;padding:20px';document.body.append(root);
   const log=(s:string)=>{const list=JSON.parse(localStorage.getItem('freefield-test-log')||'[]');list.push(s);localStorage.setItem('freefield-test-log',JSON.stringify(list))};
   const saved=localStorage.getItem('freefield-test-job');
-  const props={connected:true,initialJob:saved?JSON.parse(saved):undefined,onConnect:async()=>{},onDiscover:async()=>({apps:[{id:'sample',name:'Sample workflow',section:'image',status:'ready',runnable:true,summary:'Editable example',inputs:[{id:'prompt',type:'textarea',label:'Prompt',required:true,default:'First draft'},{id:'image',type:'image',label:'Reference',required:true,limits:{max_mb:1}}],outputs:[{type:'image',label:'Image'}],models:[]}]}),onRetainInputs:async(request:any)=>{log('retain');localStorage.setItem('freefield-test-file',await request.values.image.text())},onJobChange:async(job:any)=>{log('save:'+job.status);localStorage.setItem('freefield-test-job',JSON.stringify(job))},onSubmit:async(request:any)=>{log('submit');if(localStorage.getItem('freefield-mode')==='success')return {id:'remote-job',requestId:request.requestId,identity:'server',appId:request.appId,status:'queued',outputs:[]};throw new Error('Connection lost')},onStatus:async()=>{throw new Error('not used')},onImport:async()=>{},onCancel:async(job:any)=>{log('cancel');return {...job,status:'canceled'}},onRecover:async(job:any)=>{log('recover');return localStorage.getItem('freefield-receipt')==='yes'?{...job,id:'recovered-job',identity:'server',status:'queued',error:undefined}:null}};
-  dom.createRoot(root).render(React.createElement(studio.FreefieldStudio,props));
+  const props={connected:true,initialJob:saved?JSON.parse(saved):undefined,onConnect:async()=>{},onDiscover:async()=>({apps:[{id:'sample',name:'Sample workflow',section:'image',status:'ready',runnable:true,summary:'Editable example',inputs:[{id:'prompt',type:'textarea',label:'Prompt',required:true,default:'First draft'},{id:'image',type:'image',label:'Reference',required:true,limits:{max_mb:1}}],outputs:[{type:'image',label:'Image'}],models:[]}]}),onRetainInputs:async(request:any)=>{log('retain');localStorage.setItem('freefield-test-file',await request.values.image.text());return {image:'saved-asset'}},onRestoreInput:async()=>new File([localStorage.getItem('freefield-test-file')||''],'reference.png',{type:'image/png'}),onJobChange:async(job:any)=>{log('save:'+job.status);localStorage.setItem('freefield-test-job',JSON.stringify(job));const old=JSON.parse(localStorage.getItem('freefield-test-jobs')||'[]');localStorage.setItem('freefield-test-jobs',JSON.stringify([...old.filter((v:any)=>v.requestId!==job.requestId),job]))},onSubmit:async(request:any)=>{log('submit');if(localStorage.getItem('freefield-mode')==='success')return {id:'remote-job',requestId:request.requestId,identity:'server',appId:request.appId,status:'queued',outputs:[]};throw new Error('Connection lost')},onStatus:async()=>{throw new Error('not used')},onImport:async()=>{},onCancel:async(job:any)=>{log('cancel');return {...job,status:'canceled'}},onRecover:async(job:any)=>{log('recover');return localStorage.getItem('freefield-receipt')==='yes'?{...job,id:'recovered-job',identity:'server',status:'queued',error:undefined}:null}};
+  function Harness(){const [jobs,setJobs]=React.useState(()=>JSON.parse(localStorage.getItem('freefield-test-jobs')||'[]'));return React.createElement(studio.FreefieldStudio,{...props,jobs,onJobChange:async(job:any)=>{await props.onJobChange(job);setJobs(JSON.parse(localStorage.getItem('freefield-test-jobs')||'[]'))}})}dom.createRoot(root).render(React.createElement(Harness));
  });
  await page.getByRole('button',{name:'Discover workflows'}).click();
  await page.getByRole('button',{name:/Sample workflow/}).click();
@@ -25,6 +25,7 @@ test('retains inputs and starting identity before submission; uncertain runs sta
  await page.reload();await mount(page);
  await expect(page.getByRole('button',{name:'Start workflow'})).toBeDisabled();
  await expect(page.getByText(/Local request ID:/)).toBeVisible();
+ await page.getByRole('button',{name:'Load saved inputs'}).click();await expect(page.getByRole('region',{name:'Freefield workflows'}).getByLabel('Prompt')).toHaveValue('An illuminated city');await expect(page.getByText('Selected: reference.png.',{exact:false})).toBeVisible();
  await page.getByRole('button',{name:'I checked server history'}).click();
  await expect(page.getByRole('button',{name:'Start workflow'})).toBeEnabled();
  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('freefield-test-job')||'{}').acknowledged)).toBe(true);
@@ -47,4 +48,17 @@ test('an uncertain request can look up its saved receipt without resubmitting',a
  await page.getByRole('button',{name:'Look for saved receipt'}).click();await expect(page.getByText(/No saved server receipt/)).toBeVisible();await expect(page.getByRole('button',{name:'Start workflow'})).toBeDisabled();
  await page.evaluate(()=>localStorage.setItem('freefield-receipt','yes'));await page.getByRole('button',{name:'Look for saved receipt'}).click();await expect(page.getByText('Run status: queued')).toBeVisible();
  const log=await page.evaluate(()=>JSON.parse(localStorage.getItem('freefield-test-log')||'[]'));expect(log.filter((s:string)=>s==='submit')).toHaveLength(1);expect(log.filter((s:string)=>s==='recover')).toHaveLength(2);
+});
+
+test('earlier runs remain selectable with their saved inputs',async({page})=>{
+ await page.goto('/');await page.evaluate(()=>localStorage.setItem('freefield-mode','success'));await mount(page);
+ const panel=page.getByRole('region',{name:'Freefield workflows'});
+ await panel.getByLabel('Prompt').fill('First idea');await panel.getByLabel('Reference').setInputFiles({name:'reference.png',mimeType:'image/png',buffer:Buffer.from('original')});
+ await panel.getByRole('button',{name:'Start workflow'}).click();await expect(page.getByText('Run status: queued')).toBeVisible();
+ await panel.getByLabel('Prompt').fill('Second idea');await panel.getByRole('button',{name:'Start workflow'}).click();
+ const history=page.getByLabel('Freefield run history');await expect(history.locator('option')).toHaveCount(2);
+ const first=await history.locator('option').first().getAttribute('value');await history.selectOption(first!);
+ await page.getByRole('button',{name:'Load saved inputs'}).click();await expect(panel.getByLabel('Prompt')).toHaveValue('First idea');
+ await page.reload();await mount(page);const restored=page.getByLabel('Freefield run history');await expect(restored.locator('option')).toHaveCount(2);await restored.selectOption(first!);
+ await page.getByRole('button',{name:'Load saved inputs'}).click();await expect(page.getByRole('region',{name:'Freefield workflows'}).getByLabel('Prompt')).toHaveValue('First idea');
 });

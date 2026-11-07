@@ -1,5 +1,6 @@
 import {describe,expect,it} from 'vitest';
-import {freefieldDefaults,normalizeFreefieldJob,parseFreefieldCatalog,unresolvedFreefieldRequest,validateFreefieldValues} from '../src/lib/freefield';
+import {freefieldDefaults,normalizeFreefieldJob,parseFreefieldCatalog,snapshotFreefieldRequest,unresolvedFreefieldRequest,validateFreefieldValues} from '../src/lib/freefield';
+import {emptyProductionTools,remapProductionToolsDocument} from '../src/lib/production-tools';
 
 const fixture={id:'sound-effects',name:'Sound effects',section:'audio',status:'ready',runnable:true,summary:'Create audio',inputs:[
  {id:'prompt',type:'textarea',label:'Description',required:true,default:'rain'},
@@ -44,5 +45,17 @@ describe('Freefield catalog and inputs',()=>{
   expect(()=>normalizeFreefieldJob({...record,requestId:'not-a-uuid'})).toThrow();
   expect(()=>normalizeFreefieldJob({...record,identity:'local'})).toThrow();
   expect(()=>normalizeFreefieldJob({...record,outputs:Array(33).fill(record.outputs[0])})).toThrow();
+ });
+ it('retains prompt, preset and original file identity and remaps that identity on import',()=>{
+  const requestId='12345678-1234-4234-8234-123456789abc';const request={requestId,appId:'sound-effects',preset:'gentle',values:{prompt:'Night rain',reference:new File(['original'],'rain.wav',{type:'audio/wav'})}};
+  const snapshot=snapshotFreefieldRequest(request,{reference:'asset-original'});expect(snapshot.values.prompt).toBe('Night rain');expect(snapshot.preset).toBe('gentle');
+  expect(()=>snapshotFreefieldRequest(request,{})).toThrow(/retained/);
+  const job={id:requestId,requestId,identity:'local' as const,appId:request.appId,status:'unknown' as const,outputs:[],snapshot};
+  const doc={...emptyProductionTools(),freefieldJobs:[{serverUrl:'http://127.0.0.1:3000',job}]};
+  const restored=remapProductionToolsDocument(doc,{assetId:id=>`copy-${id}`});expect(restored.freefieldJobs?.[0].job.snapshot?.files.reference).toBe('copy-asset-original');expect(restored.freefieldJobs?.[0].job.snapshot?.values.prompt).toBe('Night rain');
+ });
+ it('accepts a discovered empty-string option as a real choice',()=>{
+  const app=parseFreefieldCatalog({apps:[{...fixture,inputs:[{id:'style',label:'Style',type:'select',required:true,options:[{value:'',label:'Any'},{value:'dramatic',label:'Dramatic'}],default:''}]}]}).apps[0];
+  expect(()=>validateFreefieldValues(app,freefieldDefaults(app))).not.toThrow();
  });
 });
