@@ -6,11 +6,13 @@ import {invoke as nativeInvoke} from '@tauri-apps/api/core';
 import {combineContinuation} from './continuation';
 import {normalizeThreeDocument} from './three/document';
 import {normalizeDirectorChat,remapDirectorChat} from './director';
+import {parseProductionPlacements} from './production';
 import {createMcpJournal,mergeMcpHistory} from './mcp-journal';
 import {validateDesign,validateCastScene} from './casting';
 import {validateProceduralModel} from './three/procedural';
 import {validateSoundtrack} from './sound/document';
 import {validatePipeline,sceneFingerprint} from './pipeline';
+import {mediaKind} from './chat-attachments';
 import {openDB, type IDBPDatabase} from 'idb';
 import type {Project,Asset,GenerationRun,Chunk,Revision,MediaJob,Scene,FilmAttachment} from './types';
 const NAME='frame-studio-v1';let dbPromise:Promise<IDBPDatabase>|undefined;
@@ -63,6 +65,24 @@ export async function putAttachment(attachment:FilmAttachment){
  const d=await db(),tx=d.transaction(['attachments','assets','settings'],'readwrite');try{const settings=tx.objectStore('settings');await assertLive(settings,attachment.projectId,attachment.assetId);const purged:string[]=(await settings.get(PURGED_ATTACHMENTS))||[];if(purged.includes(attachment.id))throw new Error('This file was permanently deleted. Attach it again as a new file.');if(await tx.objectStore('attachments').get(attachment.id))throw new Error('An attached file with this identity already exists; its original bytes were preserved.');if(attachment.assetId&&!await tx.objectStore('assets').get(attachment.assetId))throw new Error('The linked media could not be found.');await tx.objectStore('attachments').add(attachment);await tx.done}catch(e){try{tx.abort()}catch{}await tx.done.catch(()=>{});throw e}
 }
 export async function getAttachments(projectId:string):Promise<FilmAttachment[]>{return (await (await db()).getAllFromIndex('attachments','projectId',projectId)).sort((a:FilmAttachment,b:FilmAttachment)=>a.createdAt-b.createdAt)}
+export async function getAttachment(projectId:string,id:string):Promise<FilmAttachment|undefined>{const item=await (await db()).get('attachments',id) as FilmAttachment|undefined;return item?.projectId===projectId?item:undefined}
+/** Materialize the original attachment once, with the ownership check repeated in the write transaction. */
+export async function ensureAttachmentMedia(projectId:string,id:string):Promise<Asset>{
+ const d=await db(),item=await d.get('attachments',id) as FilmAttachment|undefined;
+ if(!item||item.projectId!==projectId||!(item.data instanceof Blob)||item.size!==item.data.size)throw new Error('A planned file is missing or belongs to another film. Its shot was not changed.');
+ const kind=mediaKind(item.mime);if(!kind)throw new Error(`${item.name} is not supported as a media layer. Its original remains in Chat.`);
+ if(item.size>50*1024*1024)throw new Error(`${item.name} is over 50 MB. Its original remains saved; import an optimized copy into Media before placing it.`);
+ const data=await fileData(item.data),tx=d.transaction(['attachments','assets','settings'],'readwrite');
+ try{
+  const settings=tx.objectStore('settings');await assertLive(settings,projectId,id);
+  const attachments=tx.objectStore('attachments'),current=await attachments.get(id) as FilmAttachment|undefined;
+  if(!current||current.projectId!==projectId||current.size!==item.size||current.mime!==item.mime||current.createdAt!==item.createdAt)throw new Error('The planned file changed while it was being prepared. Its shot was not changed.');
+  const assets=tx.objectStore('assets');
+  if(current.assetId){const existing=await assets.get(current.assetId) as Asset|undefined;if(!existing||existing.kind!==kind||existing.mime!==item.mime||existing.data!==data)throw new Error(`${item.name} no longer matches its linked media. The original attachment is still saved.`);await tx.done;return existing}
+  const asset:Asset={id:uid(),name:item.name,kind,mime:item.mime,data,createdAt:item.createdAt,source:'Chat attachment'};
+  await assets.add(asset);await attachments.put({...current,assetId:asset.id});await tx.done;return asset;
+ }catch(error){try{tx.abort()}catch{}await tx.done.catch(()=>{});throw error}
+}
 export async function linkAttachmentAsset(id:string,projectId:string,assetId:string){const d=await db(),tx=d.transaction(['attachments','assets','settings'],'readwrite');try{await assertLive(tx.objectStore('settings'),projectId,assetId);const store=tx.objectStore('attachments'),item=await store.get(id) as FilmAttachment|undefined;if(!item||item.projectId!==projectId)throw new Error('This attached file is missing or belongs to another film.');if(item.assetId&&item.assetId!==assetId)throw new Error('This file is already linked to different media.');if(!await tx.objectStore('assets').get(assetId))throw new Error('The linked media could not be found.');await store.put({...item,assetId});await tx.done}catch(e){try{tx.abort()}catch{}await tx.done.catch(()=>{});throw e}}
 /** Removing an unsent attachment frees its Blob. Already-referenced files must first be removed from their saved context. */
 export async function deleteAttachment(id:string){
@@ -116,6 +136,7 @@ export function validateProject(value:unknown):asserts value is Project {
  if(p.story&&(!Array.isArray(p.story.characters)||!Array.isArray(p.story.locations)||!Array.isArray(p.story.lockedFacts)||typeof p.story.initialState!=='object'))throw new Error('Invalid story bible.');
  if(p.story)for(const record of [...p.story.characters,...p.story.locations])if(!record||typeof record.id!=='string'||typeof record.name!=='string'||!Array.isArray(record.referenceAssetIds))throw new Error('Invalid cast or location reference.');
  if(p.production!==undefined&&(!Array.isArray(p.production)||p.production.some(q=>!q||typeof q.id!=='string'||!Array.isArray(q.items)||q.items.some(i=>!i||typeof i.id!=='string'||!Number.isFinite(i.duration)||i.duration<=0))))throw new Error('Invalid production queue.');
+ for(const queue of p.production||[]){const placements=new Set<string>();let count=0;for(const item of queue.items){for(const placement of parseProductionPlacements(item.placements,item.duration,{saved:true})){if(placements.has(placement.id))throw new Error('Duplicate media placement identity in production queue.');placements.add(placement.id);if(++count>2000)throw new Error('Too many media placements in production queue.')}}}
  if(p.vorkDraft!==undefined)validateVorkDraft(p.vorkDraft);
  if(p.integrationJobs!==undefined&&!Array.isArray(p.integrationJobs))throw new Error('Invalid integration jobs.');
  if(p.mcpHistory!==undefined)p.mcpHistory=mergeMcpHistory(p.mcpHistory);
@@ -147,6 +168,7 @@ export async function importArchive(value:unknown){
  for(const f of a.attachments){if(!f||typeof f.id!=='string'||!f.id||attachmentIds.has(f.id)||f.projectId!==a.project.id||typeof f.name!=='string'||typeof f.mime!=='string'||typeof f.data!=='string'||!Number.isFinite(f.createdAt)||!Number.isSafeInteger(f.size)||f.size<0||(f.assetId!==undefined&&typeof f.assetId!=='string'))throw new Error('An archived attached file is invalid.');const data=archiveBlob(f.data,f.mime);if(data.size!==f.size)throw new Error('An archived attached file has incomplete bytes.');attachmentIds.add(f.id);decodedAttachments.push({...f,data})}
  if(a.project.vorkDraft&&!attachmentIds.has(a.project.vorkDraft.attachmentId))throw new Error('The saved Vork source archive is missing from this project backup.');
  for(const message of a.project.chat?.messages||[])for(const id of message.attachmentIds||[])if(!attachmentIds.has(id))throw new Error('A saved Chat message references an attached file missing from the archive.');
+ for(const queue of [...(a.project.production||[]),...(a.project.chat?.messages||[]).flatMap(message=>message.response?.proposal?.plan?[message.response.proposal.plan]:[])])for(const item of queue.items||[])for(const placement of item.placements||[])if(!attachmentIds.has(placement.attachmentId))throw new Error('A planned media placement references a file missing from this project backup.');
  for(const f of decodedAttachments)if(f.assetId&&!a.assets.some(asset=>asset.id===f.assetId))throw new Error('An attached file references missing media.');
  // Restore as an independent project, so older backups can never overwrite newer histories.
  const map=new Map<string,string>();const fresh=(id:string)=>{if(!map.has(id))map.set(id,uid());return map.get(id)!};
@@ -159,7 +181,7 @@ export async function importArchive(value:unknown){
  if(a.project.vorkDraft)a.project.vorkDraft.attachmentId=fresh(a.project.vorkDraft.attachmentId);
  if(a.project.chat)a.project.chat=remapDirectorChat(a.project.chat,{runId:fresh,mediaId:id=>mediaIds.has(id)?fresh(id):id,sceneId:id=>id?fresh(id):id,queueId:fresh,itemId:fresh,mediaIds:[...mediaIds],attachmentId:fresh});
  if(a.project.story)for(const canon of [...a.project.story.characters,...a.project.story.locations])canon.referenceAssetIds=canon.referenceAssetIds.map(id=>mediaIds.has(id)?fresh(id):id);
- for(const q of a.project.production||[]){q.id=fresh(q.id);if(q.planRunId)q.planRunId=fresh(q.planRunId);if(q.status==='running')q.status='paused';for(const item of q.items){item.id=fresh(item.id);if(item.sceneId)item.sceneId=fresh(item.sceneId);if(item.runId)item.runId=fresh(item.runId);if(item.status==='running'){item.status='interrupted';item.error='Restored job. Continue from its saved draft.'}}}
+ for(const q of a.project.production||[]){q.id=fresh(q.id);if(q.planRunId)q.planRunId=fresh(q.planRunId);if(q.status==='running')q.status='paused';for(const item of q.items){item.id=fresh(item.id);for(const placement of item.placements||[]){placement.id=fresh(placement.id);placement.attachmentId=fresh(placement.attachmentId)}if(item.sceneId)item.sceneId=fresh(item.sceneId);if(item.runId)item.runId=fresh(item.runId);if(item.status==='running'){item.status='interrupted';item.error='Restored job. Continue from its saved draft.'}}}
  for(const job of a.project.integrationJobs||[])job.id=fresh(job.id);
  for(const job of a.project.pipelines||[]){job.id=fresh(job.id);if(job.queueId)job.queueId=fresh(job.queueId);if(job.state==='running')job.state='paused';job.settings.mediaConnectionId='';job.settings.roleConnections={};if(job.settings.mcp)job.settings.mcp={enabled:false,serverFingerprint:'',tools:[],mode:job.settings.mcp.mode};for(const task of job.tasks){const originalTaskId=task.id;task.id=fresh(task.id);if(rebaseTasks.has(originalTaskId))rebaseTasks.add(task.id);if(task.kind==='design'&&task.basis){try{const records=JSON.parse(task.basis);for(const c of records)c.referenceAssetIds=c.referenceAssetIds.map((id:string)=>mediaIds.has(id)?fresh(id):id);task.basis=JSON.stringify(records)}catch{throw new Error('Invalid saved character design checkpoint.')}}if(['scene','overlay','narration','mcp'].includes(task.kind)&&task.targetId)task.targetId=fresh(task.targetId);if(task.runId)task.runId=fresh(task.runId);if(task.assetId)task.assetId=fresh(task.assetId);if(task.jobId)task.jobId=fresh(task.jobId);if(task.status==='running')task.status='blocked';}}
 

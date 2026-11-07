@@ -6,6 +6,7 @@ import {applyDirectorProposal,directorBasis,parseDirectorResponse,putDirectorMes
 import {defaultDesign} from '../src/lib/casting';
 import {createProceduralModel} from '../src/lib/three/procedural';
 import {createThreeDocument} from '../src/lib/three/document';
+import {createMotionDocument} from '../src/lib/motion/document';
 import {newLayer} from '../src/lib/defaults';
 import * as Store from '../src/lib/storage';
 import type {Asset,GenerationRun,Project,ProviderConnection} from '../src/lib/types';
@@ -69,6 +70,52 @@ describe('restored production identity boundaries',()=>{
  it('repairs a crash between proposal application and pipeline queue linking after restore',async()=>{vi.stubGlobal('localStorage',{getItem:()=>null});let p=harness().get();const job=p.pipelines![0],raw=JSON.stringify(plan()),runId=uid(),message={id:job.messageId,role:'assistant' as const,createdAt:0,source:'ai' as const,basis:directorBasis(p),runId,response:parseDirectorResponse(raw,p,job.messageId)};p=applyDirectorProposal(putDirectorMessage(p,p.id,message),p.id,message.id);p.pipelines![0].state='paused';p.pipelines![0].tasks[0]={...p.pipelines![0].tasks[0],status:'blocked',runId};const run:GenerationRun={id:runId,projectId:p.id,sceneId:'',pipelineId:job.id,taskId:job.tasks[0].id,prompt:job.brief,provider:'openrouter',model:'fixture',status:'complete',createdAt:0,updatedAt:0,baseText:raw,lastSeq:-1,purpose:'orchestrator',format:'studio-command'};await Store.saveRun(run);const restored=await Store.importArchive(await Store.createArchive(p)),restoredQueue=restored.production![0].id,h=harness(restored),requests=mockProduction(h);await h.run();expect(h.get().pipelines![0].queueId).toBe(restoredQueue);expect(h.get().pipelines![0].state).toBe('complete');expect(h.get().production).toHaveLength(1);expect(requests).toHaveLength(3);expect(requests.every(r=>stage(r)!=='plan')).toBe(true)});
 });
 
+
+describe('production attachments',()=>{
+ function file(projectId:string){const data=new Blob(['original image'],{type:'image/png'});return {id:uid(),projectId,name:'Reference image',mime:'image/png',size:data.size,createdAt:Date.now(),data}}
+ function reader(){vi.stubGlobal('FileReader',class{result:string|undefined;onload?:()=>void;onerror?:()=>void;readAsDataURL(blob:Blob){void blob.arrayBuffer().then(data=>{this.result=`data:${blob.type};base64,${Buffer.from(data).toString('base64')}`;this.onload?.()}).catch(()=>this.onerror?.())}})}
+ it('places an approved image in a cast shot once after interruption and backup restore',async()=>{
+  reader();const {p}=queued('scene');p.pipelines![0].settings.mode='cast';const attached=file(p.id);await Store.putAttachment(attached);
+  p.chat={version:1,messages:[{id:uid(),role:'user',createdAt:0,text:'Use this file',attachmentIds:[attached.id]}]};
+  const placement={id:uid(),attachmentId:attached.id,start:1,duration:2,trim:0};p.production![0].items[0].placements=[placement];
+  const restored=await Store.importArchive(await Store.createArchive(p)),item=restored.production![0].items[0],mapped=item.placements![0],h=harness(restored),fetcher=vi.spyOn(globalThis,'fetch');
+  expect(mapped.id).not.toBe(placement.id);expect(mapped.attachmentId).not.toBe(attached.id);expect((await Store.getAttachments(restored.id))[0].id).toBe(mapped.attachmentId);
+  let interrupted=false;await expect(runPipeline({projectId:restored.id,pipelineId:restored.pipelines![0].id,getProject:h.get,commit:async fn=>{const next=fn(h.get());h.set(next);await Store.saveProject(next);if(!interrupted&&next.production?.[0].items[0].status==='applied'){interrupted=true;throw new Error('Interrupted after placement')}return next},connection:()=>provider(),mediaConnection:()=>provider(),signal:new AbortController().signal})).rejects.toThrow('Interrupted after placement');
+  await Store.resetDbForTest();h.set((await Store.getProject(restored.id))!);await h.run();expect(fetcher).not.toHaveBeenCalled();
+  const layers=h.get().scenes[0].layers;expect(layers).toHaveLength(1);expect(layers[0]).toMatchObject({id:mapped.id,start:1,duration:2,trim:0,fadeIn:0,fadeOut:0});
+  expect((await Store.getAssets()).find(a=>a.id===layers[0].assetId)?.data).toBe('data:image/png;base64,b3JpZ2luYWwgaW1hZ2U=');
+ });
+ it.each(['code','3d','motion'] as const)('places the original alongside an editable %s shot',async medium=>{
+  reader();vi.stubGlobal('localStorage',{getItem:()=>null});const {p}=queued('scene');p.production![0].items[0].medium=medium;const attached=file(p.id);await Store.putAttachment(attached);
+  const placement={id:uid(),attachmentId:attached.id,start:0,duration:3,trim:0};p.production![0].items[0].placements=[placement];
+  const output=medium==='3d'?JSON.stringify(createThreeDocument('studio',4)):medium==='motion'?JSON.stringify(createMotionDocument('orbit',4)):'<!doctype html><html><body><script>window.film={renderAt(){},pause(){}}</script></body></html>';
+  vi.spyOn(globalThis,'fetch').mockResolvedValue(complete(output));const h=harness(p);await h.run();expect(h.get().scenes[0].layers).toHaveLength(1);expect(h.get().scenes[0].layers[0].id).toBe(placement.id);
+  if(medium==='3d')expect(h.get().scenes[0].three).toBeDefined();if(medium==='motion')expect(h.get().scenes[0].motion).toBeDefined();if(medium==='code')expect(h.get().scenes[0].code).toBe(output);
+ });
+ it('keeps a planned attachment and existing layer above a saved video',async()=>{
+  reader();const {p,task}=queued('scene','video'),attached=file(p.id),videoId=uid();await Store.putAttachment(attached);task.jobId=uid();
+  const placement={id:uid(),attachmentId:attached.id,start:0,duration:3,trim:0};p.production![0].items[0].placements=[placement];
+  const prior={...newLayer({id:'',kind:'image',name:'Caption',mime:'',data:'',createdAt:0},4),type:'text' as const,text:'Keep me'};p.scenes[0].layers=[prior];
+  await Store.putAsset({id:videoId,name:'Saved footage',kind:'video',mime:'video/mp4',data:'data:video/mp4;base64,AA==',duration:4,createdAt:0});
+  await Store.putJob({id:task.jobId,projectId:p.id,sceneId:p.scenes[0].id,provider:'openrouter',model:'video-fixture',kind:'video',prompt:'Saved request',status:'saved',remoteId:'saved',assetId:videoId,createdAt:0});
+  const h=harness(p),fetcher=vi.spyOn(globalThis,'fetch');await h.run();expect(fetcher).not.toHaveBeenCalled();expect(h.get().scenes[0].layers.map(l=>l.id)).toEqual([h.get().scenes[0].layers[0].id,prior.id,placement.id]);expect(h.get().scenes[0].layers[0].assetId).toBe(videoId);
+ });
+ it('does not send a video request when a planned file belongs to another film',async()=>{
+  reader();const {p}=queued('scene','video'),foreign=file(uid());await Store.putAttachment(foreign);p.production![0].items[0].placements=[{id:uid(),attachmentId:foreign.id,start:0,duration:2,trim:0}];
+  const h=harness(p),fetcher=vi.spyOn(globalThis,'fetch');await expect(h.run()).rejects.toThrow('another film');expect(fetcher).not.toHaveBeenCalled();expect(h.get().scenes[0].layers).toEqual([]);
+ });
+ it('rejects an incomplete or malformed placement backup before importing it',async()=>{
+  reader();const {p}=queued('scene'),attached=file(p.id);await Store.putAttachment(attached);p.production![0].items[0].placements=[{id:uid(),attachmentId:attached.id,start:0,duration:2,trim:0}];
+  const archive=await Store.createArchive(p),missing=structuredClone(archive);missing.attachments=[];await expect(Store.importArchive(missing)).rejects.toThrow('missing from this project backup');
+  const malformed=structuredClone(archive);malformed.project.production![0].items[0].placements![0].duration=999;await expect(Store.importArchive(malformed)).rejects.toThrow('fit within its shot');
+ });
+ it('preserves a placement edited while its shot is being saved',async()=>{
+  reader();vi.stubGlobal('localStorage',{getItem:()=>null});const {p}=queued('scene'),attached=file(p.id);await Store.putAttachment(attached);const placement={id:uid(),attachmentId:attached.id,start:0,duration:2,trim:0};p.production![0].items[0].placements=[placement];
+  vi.spyOn(globalThis,'fetch').mockResolvedValue(complete('<!doctype html><html><body><script>window.film={renderAt(){},pause(){}}</script></body></html>'));const h=harness(p);
+  vi.spyOn(Store,'addRevision').mockImplementation(async(projectId,sceneId,code,title,scene)=>{h.get().production![0].items[0].placements![0].start=1;return {id:uid(),projectId,sceneId,code,title,scene,createdAt:0}});
+  await expect(h.run()).rejects.toThrow('placements changed');expect(h.get().production![0].items[0].placements![0].start).toBe(1);expect(h.get().scenes[0].layers).toEqual([]);
+ });
+});
 
 describe('automatic scene continuation and restored scene identity',()=>{
  const html='<!doctype html><html><body>Preserved 🌿<script>window.film={duration:4,renderAt(t){document.body.dataset.time=String(t)},pause(){}};</script></body></html>';

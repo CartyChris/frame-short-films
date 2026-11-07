@@ -1,5 +1,5 @@
 import type {Project,Scene} from './types';
-import type {ProductionItem,ProductionItemStatus,ProductionQueue,SceneContinuity,StoryMedium} from './story-types';
+import type {ProductionItem,ProductionItemStatus,ProductionPlacement,ProductionQueue,SceneContinuity,StoryMedium} from './story-types';
 import {emptyStory,sceneContinuity} from './story';
 import {newScene} from './defaults';
 
@@ -10,14 +10,35 @@ function text(value:unknown,label:string,max=4000,optional=false){if(optional&&v
 function ids(value:unknown,known:Set<string>,label:string){if(value===undefined)return [];if(!Array.isArray(value)||value.length>100||value.some(v=>typeof v!=='string'||!known.has(v)))throw new Error(`${label} contains an unknown reference. Add it to the story bible first.`);return [...new Set(value as string[])];}
 function state(value:unknown):Record<string,string>{if(value===undefined)return {};const r=record(value,'State after');if(Object.keys(r).length>200)throw new Error('A scene may update at most 200 state entries.');for(const [key,v] of Object.entries(r)){if(!key||key.length>120||['__proto__','constructor','prototype'].includes(key)||typeof v!=='string'||v.length>1200)throw new Error('State entries must have short names and text values.');}return r as Record<string,string>;}
 
+/** Resolve old attachment IDs in an interrupted response after a backup restore. */
+export function resolveAttachmentAlias(id:string,aliases:Record<string,string>={}):string {const seen=new Set<string>();while(Object.prototype.hasOwnProperty.call(aliases,id)&&!seen.has(id)){seen.add(id);id=aliases[id]}return id}
+export function attachedChatFileIds(project:Project):Set<string>{return new Set((project.chat?.messages||[]).filter(m=>m.role==='user').flatMap(m=>m.attachmentIds||[]))}
+/** Proposals cannot supply placement identities. Saved identities are preserved on review. */
+export function parseProductionPlacements(value:unknown,duration:number,options:{saved?:boolean;allowedIds?:Set<string>;aliases?:Record<string,string>}={}):ProductionPlacement[]{
+ if(value===undefined)return [];
+ if(!Array.isArray(value)||value.length>32)throw new Error('A shot may contain at most 32 attached media placements.');
+ const seen=new Set<string>();return value.map((entry,index)=>{
+  const p=record(entry,`Media placement ${index+1}`),allowed=options.saved?['id','attachmentId','start','duration','trim']:['attachmentId','start','duration','trim'];
+  if(Object.keys(p).some(k=>!allowed.includes(k)))throw new Error('A media placement contains an unsupported field.');
+  const attachmentId=typeof p.attachmentId==='string'?resolveAttachmentAlias(p.attachmentId,options.aliases):'';
+  if(!attachmentId||attachmentId.length>250||(options.allowedIds&&!options.allowedIds.has(attachmentId)))throw new Error('A media placement must refer to a file attached in this film’s Chat.');
+  const id=options.saved?typeof p.id==='string'?p.id:'':uid();if(!id||id.length>250||seen.has(id))throw new Error('Invalid or duplicate media placement identity.');seen.add(id);
+  for(const key of ['start','duration','trim'] as const)if(typeof p[key]!=='number'||!Number.isFinite(p[key]))throw new Error('Media placement timing must use finite numbers.');
+  const start=p.start as number,length=p.duration as number,trim=p.trim as number;
+  if(start<0||length<.1||trim<0||trim>86400||start+length>duration+.000001)throw new Error('Media placement timing must fit within its shot.');
+  return {id,attachmentId,start,duration:length,trim};
+ });
+}
+
 export function makeStoryPlanMessages(project:Project,instruction:string){
  const story=project.story||emptyStory(project.scenes.reduce((n,s)=>n+s.duration,0));
  const shorten=(value:string,max:number)=>value.slice(0,max);
  const timeline:Record<string,unknown>[]=[];let timelineSize=0;
  for(const s of project.scenes){const item={sceneId:s.id,title:shorten(s.title,80),duration:s.duration,summary:shorten(sceneContinuity(s).summary,100),medium:sceneContinuity(s).medium};const size=JSON.stringify(item).length;if(timelineSize+size>55000)break;timeline.push(item);timelineSize+=size;}
  const catalog={characters:story.characters.slice(0,80).map(c=>({id:c.id,name:shorten(c.name,100),appearance:shorten(c.appearance,240),referenceAssetIds:c.referenceAssetIds.slice(0,6)})),locations:story.locations.slice(0,50).map(l=>({id:l.id,name:shorten(l.name,100),description:shorten(l.description,200),referenceAssetIds:l.referenceAssetIds.slice(0,6)})),models:(project.models||[]).slice(0,200).map(m=>({id:m.id,name:shorten(m.name,100)}))};
- const system=`You are the story editor and production planner for a film studio. Return only one JSON object, no markdown or prose. Never output executable code or canonical model definitions. Use this exact shape: {"title":"Plan title","scope":"new|film|selected","instruction":"Overall revision direction","scenes":[{"sceneId":"existing ID, omit for new scenes","title":"Scene title","duration":45,"summary":"What happens in this scene","instruction":"Specific visual/action direction","medium":"code|3d|motion|video|mixed","characterIds":[],"locationIds":[],"stateAfter":{"key":"new established value"}}]}. For new films use scope new and omit sceneId; a human will approve before scenes are appended. For revisions use film/selected and existing scene IDs only; preserve canonical identity and narrative continuity. Do not invent character/location reference IDs. Never put future state into an earlier scene. Plan 30-minute or two-hour films as individual manageable scenes, not one enormous source file. The scenes' durations should add to the requested runtime. Each item must be independently reviewable. At most 1000 scenes, each 0.1–3600 seconds. A human will review every generated scene before replacing its original.`;
- const context=JSON.stringify({film:shorten(project.name,200),brief:shorten(project.brief,2000),story:{logline:shorten(story.logline,1200),world:shorten(story.world,1600),visualStyle:shorten(story.visualStyle,1000),lockedFacts:story.lockedFacts.slice(0,50).map(f=>shorten(f,200)),initialState:Object.fromEntries(Object.entries(story.initialState).slice(0,50).map(([k,v])=>[shorten(k,120),shorten(v,200)])),targetDuration:story.targetDuration},catalog,timeline,omittedTimelineScenes:project.scenes.length-timeline.length});
+ const system=`You are the story editor and production planner for a film studio. Return only one JSON object, no markdown or prose. Never output executable code or canonical model definitions. Use this exact shape: {"title":"Plan title","scope":"new|film|selected","instruction":"Overall revision direction","scenes":[{"sceneId":"existing ID, omit for new scenes","title":"Scene title","duration":45,"summary":"What happens in this scene","instruction":"Specific visual/action direction","medium":"code|3d|motion|video|mixed","characterIds":[],"locationIds":[],"stateAfter":{"key":"new established value"},"placements":[]}]}. Use placements only for media that the filmmaker explicitly wants placed in that shot, not merely used as an artistic reference. Use only IDs of files attached in this film, never invent IDs. Each placement is {"attachmentId":"exact attached file ID","start":0,"duration":5,"trim":0}. All timing is in seconds within the shot; include start, duration, and source trim for each placement. Omit placements if the use is ambiguous or not requested. For new films use scope new and omit sceneId; a human will approve before scenes are appended. For revisions use film/selected and existing scene IDs only; preserve canonical identity and narrative continuity. Do not invent character/location reference IDs. Never put future state into an earlier scene. Plan 30-minute or two-hour films as individual manageable scenes, not one enormous source file. The scenes' durations should add to the requested runtime. Each item must be independently reviewable. At most 1000 scenes, each 0.1–3600 seconds. A human will review every generated scene before replacing its original.`;
+ const attached=attachedChatFileIds(project),files=(project.chat?.messages||[]).filter(m=>m.role==='user'&&m.attachmentContext).flatMap(m=>{try{const rows:unknown=JSON.parse(m.attachmentContext!);return Array.isArray(rows)?rows:[]}catch{return []}}).filter((f):f is {id:string;name:string;mime:string}=>!!f&&typeof f==='object'&&typeof f.id==='string'&&attached.has(f.id)&&typeof f.name==='string'&&typeof f.mime==='string').slice(-64).map(f=>({id:f.id,name:shorten(f.name,200),mime:shorten(f.mime,100)}));
+ const context=JSON.stringify({attachedFiles:files,film:shorten(project.name,200),brief:shorten(project.brief,2000),story:{logline:shorten(story.logline,1200),world:shorten(story.world,1600),visualStyle:shorten(story.visualStyle,1000),lockedFacts:story.lockedFacts.slice(0,50).map(f=>shorten(f,200)),initialState:Object.fromEntries(Object.entries(story.initialState).slice(0,50).map(([k,v])=>[shorten(k,120),shorten(v,200)])),targetDuration:story.targetDuration},catalog,timeline,omittedTimelineScenes:project.scenes.length-timeline.length});
  return [{role:'system',content:system},{role:'user',content:`USER DIRECTION\n${instruction.slice(0,12000)}\n\nCURRENT FILM AND CANON\n${context}`}];
 }
 
@@ -26,18 +47,20 @@ export function parseStoryPlan(raw:string,project:Project):ProductionQueue{
  const plan=record(value,'Plan');if(!['new','film','selected'].includes(String(plan.scope)))throw new Error('Plan scope must be new, film, or selected.');
  if(Object.keys(plan).some(key=>!['title','scope','instruction','scenes'].includes(key)))throw new Error('Plans may describe scenes only. Edit canonical characters, locations, and models in the story bible.');
  if(!Array.isArray(plan.scenes)||!plan.scenes.length||plan.scenes.length>1000)throw new Error('A production plan needs 1–1000 scenes.');
- const characters=new Set(project.story?.characters.map(c=>c.id)||[]),locations=new Set(project.story?.locations.map(l=>l.id)||[]),sceneIds=new Set(project.scenes.map(s=>s.id)),seen=new Set<string>();
+ const characters=new Set(project.story?.characters.map(c=>c.id)||[]),locations=new Set(project.story?.locations.map(l=>l.id)||[]),sceneIds=new Set(project.scenes.map(s=>s.id)),attached=attachedChatFileIds(project),seen=new Set<string>();
  const items:ProductionItem[]=plan.scenes.map((value,index)=>{const item=record(value,`Scene ${index+1}`);let sceneId=typeof item.sceneId==='string'?item.sceneId:undefined;
   const visited=new Set<string>();while(sceneId&&!sceneIds.has(sceneId)&&project.sceneAliases?.[sceneId]&&!visited.has(sceneId)){visited.add(sceneId);sceneId=project.sceneAliases[sceneId];}
-  if(Object.keys(item).some(key=>!['sceneId','title','duration','summary','instruction','medium','characterIds','locationIds','stateAfter'].includes(key)))throw new Error(`Scene ${index+1} contains fields outside the plan schema.`);
+  if(Object.keys(item).some(key=>!['sceneId','title','duration','summary','instruction','medium','characterIds','locationIds','stateAfter','placements'].includes(key)))throw new Error(`Scene ${index+1} contains fields outside the plan schema.`);
   if(plan.scope!=='new'&&(!sceneId||!sceneIds.has(sceneId)))throw new Error(`Scene ${index+1} must refer to an existing scene ID.`);
   if(plan.scope==='new'&&sceneId)throw new Error('New-film plans must not replace existing scene IDs.');
   if(sceneId&&seen.has(sceneId))throw new Error('A revision plan cannot repeat a scene.');if(sceneId)seen.add(sceneId);
   if(typeof item.duration!=='number'||!Number.isFinite(item.duration)||item.duration<.1||item.duration>3600)throw new Error(`Scene ${index+1} needs a duration between 0.1 and 3600 seconds.`);
   if(!media.includes(item.medium as StoryMedium))throw new Error(`Scene ${index+1} has an unknown medium.`);
-  return {id:uid(),sceneId,title:text(item.title,'Scene title',200),duration:item.duration,summary:text(item.summary,'Scene summary',4000),instruction:text(item.instruction,'Scene direction',6000),medium:item.medium as StoryMedium,characterIds:ids(item.characterIds,characters,'Cast'),locationIds:ids(item.locationIds,locations,'Locations'),stateAfter:state(item.stateAfter),status:'pending'};
+  const placements=parseProductionPlacements(item.placements,item.duration,{allowedIds:attached,aliases:project.chat?.attachmentAliases});
+  return {id:uid(),sceneId,title:text(item.title,'Scene title',200),duration:item.duration,summary:text(item.summary,'Scene summary',4000),instruction:text(item.instruction,'Scene direction',6000),medium:item.medium as StoryMedium,characterIds:ids(item.characterIds,characters,'Cast'),locationIds:ids(item.locationIds,locations,'Locations'),stateAfter:state(item.stateAfter),status:'pending',...(placements.length?{placements}:{})};
  });
  if(items.reduce((n,item)=>n+item.duration,0)>36000)throw new Error('Split plans longer than ten hours into separate reels.');
+ if(items.reduce((n,item)=>n+(item.placements?.length||0),0)>2000)throw new Error('Use at most 2,000 attached media placements in one plan.');
  return {id:uid(),title:text(plan.title,'Plan title',200),scope:plan.scope as ProductionQueue['scope'],instruction:text(plan.instruction,'Plan instruction',6000,true),status:'draft',createdAt:Date.now(),updatedAt:Date.now(),items};
 }
 
