@@ -35,7 +35,7 @@ describe('opt-in production MCP tools',()=>{
   });
   await h.run();expect(calls).toBe(2);expect(h.get().pipelines![0].state).toBe('complete');
   expect(h.get().pipelines![0].tasks.filter(t=>t.mcpStage).map(t=>t.mcpStage)).toEqual(['inspect','animate','review']);expect(h.get().pipelines![0].tasks.find(t=>t.mcpStage==='review')?.resultText).toBe('[Skipped: no tool was called.]');
-  expect(prompts.find(p=>p.stage==='animate').untrustedPreviousResults[0].text).toContain('hand controller');
+  expect(prompts.find(p=>p.stage==='animate').untrustedPreviousResults.find((v:any)=>v.stage==='inspect').text).toContain('hand controller');
   expect(prompts.find(p=>p.stage==='review').untrustedPreviousResults.map((v:any)=>v.text)).toContain('Pose applied.');
   await h.run();expect(calls).toBe(2);expect(mcpResultText({content:[{type:'image',data:'private'},{type:'text',text:'x'.repeat(5000)}]})).toHaveLength(4000);
  });
