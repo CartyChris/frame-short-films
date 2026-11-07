@@ -10,7 +10,7 @@ test('opens the connected ComfyUI editor only when requested',async({page})=>{
  expect(requests).toBe(0);
  await page.getByRole('button',{name:'Open ComfyUI editor here'}).click();
  await expect(page.frameLocator('iframe[title="Your ComfyUI editor"]').getByRole('heading',{name:'ComfyUI fixture'})).toBeVisible();
- await expect(page.getByRole('link',{name:/Open in a new tab/})).toHaveAttribute('href','http://127.0.0.1:8188/');
+ await expect(page.getByRole('link',{name:/Open in a new tab/})).toHaveAttribute('href','http://127.0.0.1:8188');
  await page.getByRole('button',{name:'Close editor'}).click();await expect(page.locator('iframe[title="Your ComfyUI editor"]')).toHaveCount(0);
  await page.getByLabel('ComfyUI address').fill('https://example.com/');await page.getByRole('button',{name:'Open ComfyUI editor here'}).click();
  await expect(page.getByRole('alert')).toContainText('loopback');
