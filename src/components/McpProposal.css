@@ -1,0 +1,7 @@
+.mcp-proposal{border:1px solid var(--line-strong,#454548);border-radius:10px;padding:18px;margin:18px 0;background:var(--panel2,#202126)}
+.mcp-proposal h4{margin:0 0 8px;font-size:14px}
+.mcp-proposal p{color:var(--muted,#b4b4ba);font-size:11px;line-height:1.65}
+.mcp-proposal label{display:flex;flex-direction:column;gap:7px;margin:14px 0;font-size:11px}
+.mcp-proposal textarea{width:100%;resize:vertical}
+.mcp-proposal-actions{display:flex;flex-wrap:wrap;gap:8px}
+.mcp-proposal .mcp-proposal-error{color:var(--danger,#f1a59a)}
