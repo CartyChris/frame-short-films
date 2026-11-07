@@ -3,3 +3,13 @@
 /* The story studio is a workspace, so the film navigation remains reachable. */
 .story-studio-backdrop{position:relative;inset:auto;z-index:1;flex:1;min-height:0;padding:0;background:var(--bg);backdrop-filter:none;display:flex;justify-content:center}.story-studio{width:100%;max-width:1400px;max-height:none;height:100%;border:0;border-radius:0;box-shadow:none}.story-body{flex:1}.story-header{padding-top:22px}.story-header h2{font-size:30px}.story-footer{background:var(--panel)}
 @media(max-width:700px){.story-studio-backdrop{padding:0}.story-studio{max-height:none;border-radius:0}.story-header{padding:16px 18px}.story-header h2{font-size:26px}.story-header p:not(.eyebrow){font-size:11px}.story-body{padding:20px 16px}.story-footer{font-size:8px}}
+
+@media(min-width:851px){
+ .story-studio{display:grid;grid-template-columns:190px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto}
+ .story-header{grid-column:1/-1;border-bottom:1px solid var(--line,#ffffff14)}
+ .story-tabs{grid-column:1;grid-row:2;display:flex;flex-direction:column;gap:3px;padding:20px 10px;border-bottom:0;border-right:1px solid var(--line,#ffffff14);overflow:auto}
+ .story-tabs button{width:100%;padding:12px 13px;border:0;border-radius:7px;text-align:left}
+ .story-tabs button.active{color:var(--accent,#d1b283);background:#ffffff0c}
+ .story-body{grid-column:2;grid-row:2;min-width:0}
+ .story-footer{grid-column:1/-1;grid-row:3}
+}
