@@ -1,5 +1,6 @@
+import {dismissWelcome} from './welcome-helper';
 import {test,expect} from '@playwright/test';
-async function waitStudio(page:any){await page.goto('/');await page.getByRole('button',{name:'Play film',exact:true}).waitFor();await expect(page.locator('.inspector-footer')).toContainText('Rust');}
+async function waitStudio(page:any){await page.goto('/');await dismissWelcome(page);await page.getByRole('button',{name:'Play film',exact:true}).waitFor();await expect(page.locator('.inspector-footer')).toContainText('Rust');}
 async function connect(page:any,provider='OpenRouter',model='test-model'){
  await page.getByRole('button',{name:/Connect a model/}).click();
  if(provider!=='OpenRouter')await page.locator('.provider-list').getByRole('button',{name:new RegExp(provider)}).click();

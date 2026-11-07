@@ -1,7 +1,8 @@
+import {dismissWelcome} from './welcome-helper';
 import {test,expect} from '@playwright/test';
 
 test('canonical references resize in the browser and retain their original stored pixels',async({page})=>{
- await page.goto('/');
+ await page.goto('/');await dismissWelcome(page);
  const result=await page.evaluate(async()=>{
   const modulePath='/src/lib/reference-images.ts';const {sceneReferenceImages}=await import(/* @vite-ignore */ modulePath);
   const canvas=document.createElement('canvas');canvas.width=2048;canvas.height=1024;const context=canvas.getContext('2d')!;context.fillStyle='#2d7358';context.fillRect(0,0,2048,1024);context.fillStyle='#f8cf76';context.fillRect(800,150,400,700);
@@ -18,7 +19,7 @@ test('canonical references resize in the browser and retain their original store
 });
 
 test('actual canvas reference bytes reach the selected official image endpoint',async({page})=>{
- await page.goto('/');
+ await page.goto('/');await dismissWelcome(page);
  let reference='',calls=0;
  await page.route('**/api/media',async route=>{
   const body=route.request().postDataJSON();reference=body.referenceImages[0];

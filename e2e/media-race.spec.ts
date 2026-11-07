@@ -1,7 +1,8 @@
+import {dismissWelcome} from './welcome-helper';
 import {test,expect,type Page} from '@playwright/test';
 
 async function openStudio(page:Page){
-  await page.goto('/');
+  await page.goto('/');await dismissWelcome(page);
   await expect(page.getByRole('button',{name:'Play film',exact:true})).toBeVisible();
 }
 async function connectImageProvider(page:Page){

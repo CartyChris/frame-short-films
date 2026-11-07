@@ -1,3 +1,4 @@
+import {dismissWelcome} from './welcome-helper';
 import {test,expect,type Page} from '@playwright/test';
 import {readFile,mkdir} from 'node:fs/promises';
 import {physicsBakeStatus} from '../src/lib/three/physics-types';
@@ -6,7 +7,7 @@ async function archive(page:Page){await page.getByRole('button',{name:'Export fi
 const workspaces=(page:Page)=>page.getByRole('navigation',{name:'Workspaces'});
 test('whole app bakes real browser Jolt, preserves its source through split/reload/restore, and exports seekable motion',async({page})=>{
  test.setTimeout(120000);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto('/');await workspaces(page).getByRole('button',{name:/3D studio/}).click();
+ await page.goto('/');await dismissWelcome(page);await workspaces(page).getByRole('button',{name:/3D studio/}).click();
  await page.getByRole('button',{name:'New 3D shot',exact:true}).click();await expect(page.locator('.s3-viewport canvas')).toBeVisible();await page.getByRole('button',{name:'Browse sample assets'}).click();await page.locator('.s3-asset').filter({hasText:'Leo'}).click();
  await page.locator('.s3-outliner').getByRole('button',{name:'Leo',exact:true}).click();
  await page.getByLabel('Position Y',{exact:true}).fill('5');

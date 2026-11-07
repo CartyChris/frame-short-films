@@ -1,6 +1,7 @@
+import {dismissWelcome} from './welcome-helper';
 import {test,expect,type Page} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
-async function studio(page:Page){await page.goto('/');await page.getByRole('button',{name:'3D studio'}).click();await page.getByRole('button',{name:'Explore the animated example'}).click();await expect(page.getByLabel('Film name')).toHaveValue('The Lantern Road');await expect(page.locator('.s3-viewport canvas')).toBeVisible();}
+async function studio(page:Page){await page.goto('/');await dismissWelcome(page);await page.getByRole('button',{name:'3D studio'}).click();await page.getByRole('button',{name:'Explore the animated example'}).click();await expect(page.getByLabel('Film name')).toHaveValue('The Lantern Road');await expect(page.locator('.s3-viewport canvas')).toBeVisible();}
 async function archive(page:Page){await page.getByRole('button',{name:'Export film',exact:true}).click();const download=page.waitForEvent('download');await page.getByRole('button',{name:/Complete project/}).click();const file=await download;const result=JSON.parse(await readFile((await file.path())!,'utf8'));await page.getByRole('button',{name:'Close export'}).click();return result;}
 async function scrub(page:Page,time:number){await page.getByLabel('3D playhead').fill(String(time));}
 test('a split 3D revision retains its source clock through cutoff, reload and model handoff',async({page})=>{
