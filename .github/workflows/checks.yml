@@ -73,6 +73,8 @@ jobs:
       # Exercise the compositor before other browser-heavy tests so that any
       # runner resource exhaustion cannot mask its actual result.
       - run: npm test -- --maxWorkers=1 tests/film-transitions-browser.test.ts
+        env:
+          DEBUG: pw:browser
       - run: npm test -- --maxWorkers=1 --exclude tests/film-transitions-browser.test.ts
       - run: npm run build
       - uses: actions/upload-artifact@v7
