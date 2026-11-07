@@ -15,14 +15,14 @@ export interface McpOperationIdentity {
  taskId:string;
 }
 export type McpOperationState='pending'|'unknown'|'complete'|'failed';
-/** Restricted fields prevent raw server text, tool arguments, and returned media entering the journal. */
-export interface McpReceipt {outcome:'success'|'rejected'|'cancelled'; artifactCount?:number; errorCode?:'INVALID_INPUT'|'NOT_FOUND'|'DENIED'|'UNAVAILABLE'|'TIMEOUT'|'OTHER'}
+/** Only definitive results may be recorded. Timeouts or uncertain transport failures must remain unknown. Restricted fields exclude raw tool arguments, server text, and media. */
+export interface McpReceipt {outcome:'success'|'rejected'|'cancelled'; artifactCount?:number; errorCode?:'INVALID_INPUT'|'NOT_FOUND'|'DENIED'|'UNAVAILABLE'|'OTHER'}
 export interface McpJournalRecord {identity:McpOperationIdentity;state:McpOperationState;createdAt:number;updatedAt:number;dispatchedAt?:number;receipt?:McpReceipt}
 interface StoredRecord extends McpJournalRecord {ownerToken?:string}
 export interface McpClaim {created:boolean;record:McpJournalRecord;ownerToken?:string}
 export interface McpJournal {claim(identity:McpOperationIdentity):Promise<McpClaim>;markDispatched(requestId:string,ownerToken:string):Promise<boolean>;finish(requestId:string,ownerToken:string,receipt:McpReceipt):Promise<McpJournalRecord>;resolveUncertain(requestId:string,receipt:McpReceipt):Promise<McpJournalRecord>;get(requestId:string):Promise<McpJournalRecord|undefined>;list(projectId:string):Promise<McpJournalRecord[]>;exportRecords(projectId:string):Promise<McpJournalRecord[]>;importRecords(records:McpJournalRecord[]):Promise<void>;close():Promise<void>}
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,hex=/^[0-9a-f]{64}$/;
-const outcomes=new Set(['success','rejected','cancelled']),codes=new Set(['INVALID_INPUT','NOT_FOUND','DENIED','UNAVAILABLE','TIMEOUT','OTHER']);
+const outcomes=new Set(['success','rejected','cancelled']),codes=new Set(['INVALID_INPUT','NOT_FOUND','DENIED','UNAVAILABLE','OTHER']);
 function cleanIdentity(value:McpOperationIdentity):McpOperationIdentity {
  if(!value||typeof value!=='object'||!uuid.test(value.requestId)||!hex.test(value.serverFingerprint)||!hex.test(value.argumentsDigest)||!/^[-a-zA-Z0-9_.:]{1,200}$/.test(value.toolName))throw new Error('Invalid MCP operation identity.');
  for(const key of ['projectId','pipelineId','taskId'] as const)if(typeof value[key]!=='string'||!value[key]||value[key].length>200||/[\x00-\x1f]/.test(value[key]))throw new Error('Invalid MCP operation identity.');
