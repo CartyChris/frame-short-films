@@ -9,7 +9,7 @@ export function McpProductionSettings({projectId,value,disabled,onChange,onOpenT
  const session=useSyncExternalStore(subscribeMcpSession,currentMcpSession,()=>null);
  const available=session?.projectId===projectId?session:null;
  const active=!!(available&&value?.enabled&&value.serverFingerprint===available.serverFingerprint);
- function enable(enabled:boolean){onChange({enabled,serverFingerprint:available?.serverFingerprint||'',tools:enabled&&value?.serverFingerprint===available?.serverFingerprint?value.tools:[]})}
+ function enable(enabled:boolean){onChange({enabled,serverFingerprint:available?.serverFingerprint||'',tools:enabled&&value&&value.serverFingerprint===available?.serverFingerprint?value.tools:[]})}
  function toggle(name:string,checked:boolean){if(!available)return;const tools=new Set(active?value?.tools||[]:[]);if(checked&&tools.size>=50)return;checked?tools.add(name):tools.delete(name);onChange({enabled:true,serverFingerprint:available.serverFingerprint,tools:[...tools]})}
  return <details className="production-mcp"><summary>Connected studio tools <span>Optional</span></summary>
   <p className="hint">Let the production model select from the tools you enable here. A tool may change files, modify a scene, contact a service, or spend credits. Review the server and its tools before enabling them. An uncertain call stops rather than submitting it again.</p>
