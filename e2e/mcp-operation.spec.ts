@@ -26,4 +26,9 @@ test('a reviewed local tool call is journaled before it is sent',async({page})=>
  expect(requestId).toMatch(/^[0-9a-f-]{36}$/);expect(observedState).toBe('unknown');
  const saved=await page.evaluate(async id=>new Promise<any>((resolve,reject)=>{const open=indexedDB.open('frame-mcp-operation-journal');open.onerror=()=>reject(open.error);open.onsuccess=()=>{const db=open.result,get=db.transaction('operations').objectStore('operations').get(id);get.onsuccess=()=>{resolve(get.result);db.close()};get.onerror=()=>reject(get.error)}}),requestId);
  expect(saved.state).toBe('complete');expect(JSON.stringify(saved)).not.toContain('test-pairing-token');
+ await page.getByRole('navigation',{name:'Workspaces'}).getByRole('button',{name:'Produce',exact:true}).click();
+ await page.getByText('Connected studio tools',{exact:false}).click();
+ await page.getByLabel('Allow this production to use selected tools').check();
+ await page.locator('.production-mcp-tools label').filter({hasText:'describe_scene'}).locator('input').check();
+ await expect(page.locator('.production-mcp-tools label').filter({hasText:'describe_scene'}).locator('input')).toBeChecked();
 });
