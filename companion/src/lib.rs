@@ -70,6 +70,7 @@ pub fn router(state: AppState) -> Router {
         .route("/integrations/mcp/connect", post(integrations::connect))
         .route("/integrations/mcp/tools", post(integrations::tools))
         .route("/integrations/mcp/call", post(integrations::call))
+        .route("/integrations/mcp/receipt", post(integrations::receipt))
         .route(
             "/integrations/mcp/disconnect",
             post(integrations::disconnect),

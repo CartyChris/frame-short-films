@@ -7,14 +7,17 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet},
-    path::PathBuf,
+    fs::{self, OpenOptions},
+    io::{Read, Write},
+    path::{Path, PathBuf},
     process::Stdio,
     sync::Arc,
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -25,15 +28,154 @@ use tokio::{
 const PROTOCOL: &str = "2025-11-25";
 const MAX_RESPONSE: usize = 16 * 1024 * 1024;
 
-#[derive(Default)]
+const MAX_RECEIPT_BYTES: usize = 1024 * 1024;
+const MAX_RECORD_BYTES: usize = MAX_RECEIPT_BYTES + 8192;
+const MAX_LEDGER_RECORDS: usize = 10000;
+
 pub struct Hub {
     sessions: Mutex<HashMap<String, Arc<Mutex<Connection>>>>,
+    ledger_dir: Result<PathBuf, String>,
+}
+impl Default for Hub {
+    fn default() -> Self {
+        let ledger_dir = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .map(|home| home.join("Library/Application Support/Frame/Companion/mcp-ledger"))
+            .ok_or_else(|| {
+                "Cannot find the local home directory for the MCP operation ledger".to_string()
+            });
+        Self {
+            sessions: Mutex::new(HashMap::new()),
+            ledger_dir,
+        }
+    }
 }
 struct Connection {
     transport: Transport,
     tool_names: HashSet<String>,
     server_info: Value,
-    request_ids: HashSet<String>,
+    server_digest: String,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LedgerRecord {
+    version: u8,
+    request_id: String,
+    server_digest: String,
+    tool: String,
+    arguments_digest: String,
+    status: String,
+    created_at: u64,
+    updated_at: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    result: Option<Value>,
+    result_omitted: bool,
+}
+fn digest(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .min(u64::MAX as u128) as u64
+}
+fn ensure_ledger(root: &Path) -> Result<(), String> {
+    fs::create_dir_all(root).map_err(|_| {
+        "Cannot open the private MCP operation ledger; no tool was submitted".to_string()
+    })?;
+    let metadata = fs::symlink_metadata(root)
+        .map_err(|_| "Cannot inspect the MCP operation ledger".to_string())?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err("The MCP operation ledger must be a real private directory".into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(root, fs::Permissions::from_mode(0o700))
+            .map_err(|_| "Cannot protect the MCP operation ledger".to_string())?;
+    }
+    Ok(())
+}
+fn ledger_path(root: &Path, id: &str) -> PathBuf {
+    root.join(format!("{}.json", digest(id.as_bytes())))
+}
+fn read_record(path: &Path) -> Result<LedgerRecord, String> {
+    let metadata =
+        fs::symlink_metadata(path).map_err(|_| "No saved MCP receipt was found".to_string())?;
+    if !metadata.is_file()
+        || metadata.file_type().is_symlink()
+        || metadata.len() > MAX_RECORD_BYTES as u64
+    {
+        return Err("The saved MCP receipt is damaged or too large; do not resubmit it".into());
+    }
+    let mut bytes = Vec::new();
+    fs::File::open(path)
+        .and_then(|f| {
+            f.take((MAX_RECORD_BYTES + 1) as u64)
+                .read_to_end(&mut bytes)
+        })
+        .map_err(|_| "Could not read the saved MCP receipt; do not resubmit it".to_string())?;
+    serde_json::from_slice(&bytes)
+        .map_err(|_| "The saved MCP receipt is incomplete; do not resubmit it".into())
+}
+fn sync_directory(root: &Path) -> Result<(), String> {
+    fs::File::open(root)
+        .and_then(|f| f.sync_all())
+        .map_err(|_| {
+            "Could not durably sync the MCP operation ledger; do not resubmit this request".into()
+        })
+}
+fn claim(root: &Path, record: &LedgerRecord) -> Result<PathBuf, String> {
+    ensure_ledger(root)?;
+    if fs::read_dir(root)
+        .map_err(|_| "Cannot inspect the MCP operation ledger".to_string())?
+        .take(MAX_LEDGER_RECORDS + 1)
+        .count()
+        >= MAX_LEDGER_RECORDS
+    {
+        return Err("MCP receipt limit reached; no new tool was submitted".into());
+    }
+    let path = ledger_path(root, &record.request_id);
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file=match options.open(&path){Ok(file)=>file,Err(e) if e.kind()==std::io::ErrorKind::AlreadyExists=>{
+        return match read_record(&path){Ok(existing) if existing.request_id==record.request_id&&existing.server_digest==record.server_digest&&existing.tool==record.tool&&existing.arguments_digest==record.arguments_digest=>Err("This request ID was already attempted. Look up its receipt; it will not be sent again.".into()),Ok(_)=>Err("This request ID is already bound to different server, tool, or arguments. It will not be sent again.".into()),Err(e)=>Err(e)}
+    },Err(_)=>return Err("Cannot create a durable MCP operation record; no tool was submitted".into())};
+    let bytes = serde_json::to_vec(record)
+        .map_err(|_| "Cannot serialize the MCP operation record".to_string())?;
+    file.write_all(&bytes)
+        .and_then(|_| file.sync_all())
+        .map_err(|_| {
+            "Cannot durably save the MCP operation record; do not resubmit this ID".to_string()
+        })?;
+    sync_directory(root)?;
+    Ok(path)
+}
+fn finish_record(root: &Path, path: &Path, record: &LedgerRecord) -> Result<(), String> {
+    let bytes =
+        serde_json::to_vec(record).map_err(|_| "Cannot encode the MCP receipt".to_string())?;
+    if bytes.len() > MAX_RECORD_BYTES {
+        return Err("MCP receipt exceeded its saved size limit".into());
+    }
+    let mut temporary = tempfile::NamedTempFile::new_in(root)
+        .map_err(|_| "Cannot create a durable MCP receipt".to_string())?;
+    temporary
+        .write_all(&bytes)
+        .and_then(|_| temporary.as_file().sync_all())
+        .map_err(|_| {
+            "Cannot save the MCP receipt; inspect the target before retrying".to_string()
+        })?;
+    temporary.persist(path).map_err(|_| {
+        "Cannot finalize the MCP receipt; inspect the target before retrying".to_string()
+    })?;
+    sync_directory(root)
 }
 enum Transport {
     Http {
@@ -368,9 +510,11 @@ pub async fn connect(
             },
             _=>return Err("Choose local Streamable HTTP or the installed Blender MCP executable".into()),
         };
-        let mut connection=Connection{transport,tool_names:HashSet::new(),server_info:json!({}),request_ids:HashSet::new()};
+        let mut connection=Connection{transport,tool_names:HashSet::new(),server_info:json!({}),server_digest:String::new()};
         let initialized=connection.transport.send("initialize",json!({"protocolVersion":PROTOCOL,"capabilities":{},"clientInfo":{"name":"Frame","version":"2.0.0"}}),false).await?;
         connection.server_info=initialized.get("serverInfo").cloned().ok_or("MCP initialize returned no server identity")?;
+        let server_binding=match &connection.transport {Transport::Http{endpoint,..}=>json!({"transport":"http","endpoint":endpoint.as_str(),"serverInfo":connection.server_info}),Transport::Stdio{..}=>json!({"transport":"blender-stdio","executable":blender_server().map(|p|p.to_string_lossy().to_string()),"serverInfo":connection.server_info})};
+        connection.server_digest=digest(&serde_json::to_vec(&server_binding).map_err(|_|"Cannot identify the MCP server")?);
         if let Transport::Http{protocol,..}=&mut connection.transport { *protocol=initialized["protocolVersion"].as_str().ok_or("MCP initialize returned no protocol version")?.to_string(); }
         connection.transport.send("notifications/initialized",json!({}),true).await?;
         let tools=refresh(&mut connection).await?;let id=uuid::Uuid::new_v4().to_string();let info=connection.server_info.clone();
@@ -432,30 +576,59 @@ pub async fn call(State(state): State<AppState>, Json(request): Json<CallRequest
             "Review the selected tool and its JSON arguments, then explicitly run it",
         );
     }
-    let result = async {
-        let connection = session(&state, &request.connection_id).await?;
-        let mut connection = connection.lock().await;
-        if !connection.tool_names.contains(&request.name) {
-            return Err("Select a tool from the current server's discovered tool list".into());
+    let result=async {
+        let connection=session(&state,&request.connection_id).await?;
+        let mut connection=connection.lock().await;
+        if !connection.tool_names.contains(&request.name){return Err("Select a tool from the current server's discovered tool list".into())}
+        let arguments=serde_json::to_vec(&request.arguments).map_err(|_|"Invalid tool arguments".to_string())?;
+        if arguments.len()>4*1024*1024{return Err("Tool arguments exceed the size limit".into())}
+        let root=state.integrations.ledger_dir.as_ref().map_err(Clone::clone)?;
+        let now=now_ms();let mut record=LedgerRecord{version:1,request_id:request.request_id.clone(),server_digest:connection.server_digest.clone(),tool:request.name.clone(),arguments_digest:digest(&arguments),status:"unknown".into(),created_at:now,updated_at:now,result:None,result_omitted:false};
+        let path=claim(root,&record)?;
+        let response=connection.transport.send("tools/call",json!({"name":request.name,"arguments":request.arguments}),false).await;
+        match response {
+            Ok(value)=>{
+                record.status=if value.get("isError").and_then(Value::as_bool)==Some(true){"failed"}else{"succeeded"}.into();record.updated_at=now_ms();
+                if serde_json::to_vec(&value).map_err(|_|"Cannot encode MCP result".to_string())?.len()<=MAX_RECEIPT_BYTES {record.result=Some(value.clone())}else{record.result_omitted=true}
+                finish_record(root,&path,&record)?;Ok(value)
+            },
+            Err(message)=>Err(format!("{message} Outcome is unknown; look up the saved receipt and inspect the target before retrying.")),
         }
-        if !connection.request_ids.insert(request.request_id.clone()) {
-            return Err("This call ID was already submitted. It will not be repeated; inspect the tool's state.".into());
-        }
-        if connection.request_ids.len()>10000 {return Err("Reconnect before making more tool calls in this session".into());}
-        connection
-            .transport
-            .send(
-                "tools/call",
-                json!({"name":request.name,"arguments":request.arguments}),
-                false,
-            )
-            .await
-    }
-    .await;
+    }.await;
     match result {
         Ok(result) => Json(json!({"requestId":request.request_id,"result":result})).into_response(),
         Err(message) => error(StatusCode::BAD_REQUEST, &message),
     }
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReceiptRequest {
+    request_id: String,
+}
+pub async fn receipt(
+    State(state): State<AppState>,
+    Json(request): Json<ReceiptRequest>,
+) -> Response {
+    if request.request_id.is_empty() || request.request_id.len() > 200 {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "A valid MCP request ID is required",
+        );
+    }
+    let result = (|| {
+        let root = state
+            .integrations
+            .ledger_dir
+            .as_ref()
+            .map_err(Clone::clone)?;
+        ensure_ledger(root)?;
+        let record = read_record(&ledger_path(root, &request.request_id))?;
+        if record.request_id != request.request_id {
+            return Err("The saved MCP receipt does not match this request".to_string());
+        }
+        Ok::<_, String>(record)
+    })();
+    match result{Ok(record)=>Json(json!({"requestId":record.request_id,"status":record.status,"tool":record.tool,"createdAt":record.created_at,"updatedAt":record.updated_at,"result":record.result,"resultOmitted":record.result_omitted})).into_response(),Err(message)=>error(StatusCode::BAD_REQUEST,&message)}
 }
 pub async fn disconnect(
     State(state): State<AppState>,
@@ -521,14 +694,17 @@ mod tests {
         use axum::http::Request;
         use axum::{routing::post, Router};
         use tower::ServiceExt;
-        let local=Router::new().route("/mcp",post(|Json(v):Json<Value>|async move {if v["method"]=="notifications/initialized"{return StatusCode::ACCEPTED.into_response();}let result=match v["method"].as_str().unwrap_or(""){"initialize"=>json!({"protocolVersion":PROTOCOL,"serverInfo":{"name":"fixture","version":"1"},"capabilities":{"tools":{}}}),"tools/list"=>json!({"tools":[{"name":"scene_info","inputSchema":{"type":"object"}}]}),"tools/call"=>json!({"content":[{"type":"text","text":"fixture scene"}]}),_=>json!({})};Json(json!({"jsonrpc":"2.0","id":v["id"],"result":result})).into_response()}));
+        let local=Router::new().route("/mcp",post(|Json(v):Json<Value>|async move {if v["method"]=="notifications/initialized"{return StatusCode::ACCEPTED.into_response();}if v["method"]=="tools/call"&&v["params"]["arguments"]["loseResponse"]==true{return StatusCode::SERVICE_UNAVAILABLE.into_response();}let result=match v["method"].as_str().unwrap_or(""){"initialize"=>json!({"protocolVersion":PROTOCOL,"serverInfo":{"name":"fixture","version":"1"},"capabilities":{"tools":{}}}),"tools/list"=>json!({"tools":[{"name":"scene_info","inputSchema":{"type":"object"}}]}),"tools/call"=>json!({"content":[{"type":"text","text":"fixture scene"}]}),_=>json!({})};Json(json!({"jsonrpc":"2.0","id":v["id"],"result":result})).into_response()}));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let server = tokio::spawn(async move { axum::serve(listener, local).await.unwrap() });
-        let app = super::super::router(AppState::new(
-            "fixture-token".into(),
-            super::super::default_origins(),
-        ));
+        let temp = tempfile::tempdir().unwrap();
+        let mut state = AppState::new("fixture-token".into(), super::super::default_origins());
+        state.integrations = Arc::new(Hub {
+            sessions: Mutex::new(HashMap::new()),
+            ledger_dir: Ok(temp.path().join("mcp-ledger")),
+        });
+        let app = super::super::router(state);
         let request = |path: &str, body: Value| {
             Request::builder()
                 .method("POST")
@@ -559,8 +735,161 @@ mod tests {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let response=app.clone().oneshot(request("/integrations/mcp/call",json!({"connectionId":id,"name":"scene_info","arguments":{},"requestId":"three","approved":true}))).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        let response=app.oneshot(request("/integrations/mcp/call",json!({"connectionId":id,"name":"scene_info","arguments":{},"requestId":"three","approved":true}))).await.unwrap();
+        let response=app.clone().oneshot(request("/integrations/mcp/call",json!({"connectionId":id,"name":"scene_info","arguments":{},"requestId":"three","approved":true}))).await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response = app
+            .clone()
+            .oneshot(request(
+                "/integrations/mcp/receipt",
+                json!({"requestId":"three"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let saved: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), MAX_RESPONSE).await.unwrap())
+                .unwrap();
+        assert_eq!(saved["status"], "succeeded");
+        assert_eq!(saved["result"]["content"][0]["text"], "fixture scene");
+        let response=app.clone().oneshot(request("/integrations/mcp/call",json!({"connectionId":id,"name":"scene_info","arguments":{"loseResponse":true},"requestId":"uncertain","approved":true}))).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response = app
+            .clone()
+            .oneshot(request(
+                "/integrations/mcp/receipt",
+                json!({"requestId":"uncertain"}),
+            ))
+            .await
+            .unwrap();
+        let uncertain: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), MAX_RESPONSE).await.unwrap())
+                .unwrap();
+        assert_eq!(uncertain["status"], "unknown");
+        let mut restarted_state =
+            AppState::new("fixture-token".into(), super::super::default_origins());
+        restarted_state.integrations = Arc::new(Hub {
+            sessions: Mutex::new(HashMap::new()),
+            ledger_dir: Ok(temp.path().join("mcp-ledger")),
+        });
+        let restarted = super::super::router(restarted_state);
+        let response = restarted
+            .clone()
+            .oneshot(request(
+                "/integrations/mcp/connect",
+                json!({"transport":"http","endpoint":format!("http://127.0.0.1:{port}/mcp")}),
+            ))
+            .await
+            .unwrap();
+        let connected: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), MAX_RESPONSE).await.unwrap())
+                .unwrap();
+        let new_id = connected["connectionId"].as_str().unwrap();
+        let response=restarted.clone().oneshot(request("/integrations/mcp/call",json!({"connectionId":new_id,"name":"scene_info","arguments":{},"requestId":"three","approved":true}))).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response=restarted.clone().oneshot(request("/integrations/mcp/call",json!({"connectionId":new_id,"name":"scene_info","arguments":{"changed":true},"requestId":"three","approved":true}))).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let message: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), MAX_RESPONSE).await.unwrap())
+                .unwrap();
+        assert!(message["error"].as_str().unwrap().contains("different"));
+        let response=restarted.clone().oneshot(request("/integrations/mcp/call",json!({"connectionId":new_id,"name":"scene_info","arguments":{"loseResponse":true},"requestId":"uncertain","approved":true}))).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response = restarted
+            .clone()
+            .oneshot(request(
+                "/integrations/mcp/receipt",
+                json!({"requestId":"uncertain"}),
+            ))
+            .await
+            .unwrap();
+        let uncertain: Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), MAX_RESPONSE).await.unwrap())
+                .unwrap();
+        assert_eq!(uncertain["status"], "unknown");
+        let response = restarted
+            .oneshot(request(
+                "/integrations/mcp/receipt",
+                json!({"requestId":"three"}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
         server.abort();
+    }
+    fn fixture_record(id: &str) -> LedgerRecord {
+        LedgerRecord {
+            version: 1,
+            request_id: id.into(),
+            server_digest: digest(b"server"),
+            tool: "scene_info".into(),
+            arguments_digest: digest(br#"{"x":1}"#),
+            status: "unknown".into(),
+            created_at: 1,
+            updated_at: 1,
+            result: None,
+            result_omitted: false,
+        }
+    }
+    #[test]
+    fn persistent_claims_fail_closed_across_restarts_and_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("ledger");
+        let first = fixture_record("request-1");
+        let path = claim(&root, &first).unwrap();
+        assert_eq!(read_record(&path).unwrap().status, "unknown");
+        assert!(claim(&root, &fixture_record("request-1"))
+            .unwrap_err()
+            .contains("already attempted"));
+        let mut changed = fixture_record("request-1");
+        changed.arguments_digest = digest(b"different arguments");
+        assert!(claim(&root, &changed).unwrap_err().contains("different"));
+        changed.arguments_digest = first.arguments_digest.clone();
+        changed.server_digest = digest(b"different server");
+        assert!(claim(&root, &changed).unwrap_err().contains("different"));
+        changed.server_digest = first.server_digest.clone();
+        changed.tool = "another_tool".into();
+        assert!(claim(&root, &changed).unwrap_err().contains("different"));
+        let bytes = fs::read(&path).unwrap();
+        assert!(!String::from_utf8_lossy(&bytes).contains("different arguments"));
+        let mut done = first;
+        done.status = "succeeded".into();
+        done.result = Some(json!({"content":[{"type":"text","text":"saved"}]}));
+        finish_record(&root, &path, &done).unwrap();
+        let recovered = read_record(&path).unwrap();
+        assert_eq!(recovered.status, "succeeded");
+        assert_eq!(recovered.result.unwrap()["content"][0]["text"], "saved");
+    }
+    #[test]
+    fn simultaneous_claims_and_damaged_receipts_never_dispatch_twice() {
+        use std::sync::{Arc as StdArc, Barrier};
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("ledger");
+        ensure_ledger(&root).unwrap();
+        let barrier = StdArc::new(Barrier::new(3));
+        let workers = (0..2)
+            .map(|_| {
+                let root = root.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    claim(&root, &fixture_record("same-id")).is_ok()
+                })
+            })
+            .collect::<Vec<_>>();
+        barrier.wait();
+        assert_eq!(
+            workers
+                .into_iter()
+                .map(|w| w.join().unwrap())
+                .filter(|ok| *ok)
+                .count(),
+            1
+        );
+        let broken = ledger_path(&root, "broken-id");
+        fs::write(&broken, b"{").unwrap();
+        assert!(claim(&root, &fixture_record("broken-id"))
+            .unwrap_err()
+            .contains("incomplete"));
+        assert_eq!(fs::read(&broken).unwrap(), b"{");
     }
 }
