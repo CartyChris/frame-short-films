@@ -15,6 +15,7 @@ pub(crate) struct Profile {
     pub id: String,
     pub name: String,
     pub executable: String,
+    pub resolved_executable: String,
     pub args: Vec<String>,
     pub revision: String,
 }
@@ -65,6 +66,9 @@ fn validate_saved(profile: &Profile) -> Result<(), String> {
         &profile.executable,
         &profile.args,
     )?;
+    if !Path::new(&profile.resolved_executable).is_absolute() || profile.resolved_executable.len()>4096 || profile.resolved_executable.chars().any(char::is_control) {
+        return Err("Invalid MCP profile executable target".into());
+    }
     let revision =
         uuid::Uuid::parse_str(&profile.revision).map_err(|_| "Invalid MCP profile revision")?;
     if revision.get_version_num() != 4 || profile.revision != revision.to_string() {
@@ -161,15 +165,15 @@ impl Registry {
         if !cli::executable_file(&canonical) {
             return Err("The selected MCP executable is not a regular executable file".into());
         }
-        let executable = canonical
-            .to_str()
-            .ok_or("The executable path is not valid UTF-8")?
-            .to_string();
-        validate_fields(&input.id, &input.name, &executable, &input.args)?;
+        // Preserve the reviewed launch path: Python virtual environments often
+        // use a symlink whose invocation path determines the active packages.
+        // validate_fields also inspects the canonical target for shell launchers.
+        validate_fields(&input.id, &input.name, &input.executable, &input.args)?;
         let profile = Profile {
             id: input.id,
             name: input.name,
-            executable,
+            executable: input.executable,
+            resolved_executable: canonical.to_str().ok_or("The executable target is not valid UTF-8")?.to_string(),
             args: input.args,
             revision: uuid::Uuid::new_v4().to_string(),
         };
@@ -272,10 +276,7 @@ mod tests {
         let registry = Registry::load(Some(path.clone()));
         let exe = executable(&dir, "fixture-server");
         let first = registry.save(input(exe.clone())).unwrap();
-        assert_eq!(
-            first.executable,
-            std::fs::canonicalize(&exe).unwrap().to_str().unwrap()
-        );
+        assert_eq!(first.executable, exe);
         assert_eq!(registry.get("cascadeur"), Some(first.clone()));
         #[cfg(unix)]
         {
@@ -295,6 +296,18 @@ mod tests {
         );
         reloaded.remove("cascadeur").unwrap();
         assert!(Registry::load(Some(path)).list().is_empty());
+    }
+    #[cfg(unix)]
+    #[test]
+    fn preserves_reviewed_symlink_path_for_virtual_environments() {
+        use std::os::unix::fs::symlink;
+        let dir = TempDir::new().unwrap();
+        let exe = executable(&dir, "python-real");
+        let link = dir.path().join("python-venv");
+        symlink(&exe, &link).unwrap();
+        let registry = Registry::load(Some(dir.path().join("profiles.json")));
+        let saved = registry.save(input(link.to_string_lossy().into())).unwrap();
+        assert_eq!(saved.executable, link.to_string_lossy());
     }
     #[test]
     fn rejects_untrusted_shapes_and_missing_executables_without_writing() {

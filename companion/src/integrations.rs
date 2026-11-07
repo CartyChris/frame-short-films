@@ -538,7 +538,9 @@ pub async fn connect(
             "custom-stdio"=>{
                 let profile=state.mcp_profiles.get(request.profile_id.as_deref().unwrap_or("")).ok_or("Select a saved local server profile")?;
                 if !super::cli::executable_file(Path::new(&profile.executable)){return Err("The reviewed server executable is no longer available".into());}
-                let binding=json!({"transport":"custom-stdio","profile":profile.id,"revision":profile.revision,"executable":profile.executable,"args":profile.args});
+                let resolved=std::fs::canonicalize(&profile.executable).map_err(|_|"The reviewed server executable is no longer available")?;
+                if resolved.to_str()!=Some(profile.resolved_executable.as_str()){return Err("The reviewed server executable now points somewhere else. Review and save the profile again.".into());}
+                let binding=json!({"transport":"custom-stdio","profile":profile.id,"revision":profile.revision,"executable":profile.executable,"resolvedExecutable":resolved.to_string_lossy(),"args":profile.args});
                 profile_binding=Some((profile.id.clone(),profile.revision.clone()));
                 let mut child=Command::new(&profile.executable).args(&profile.args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true).spawn().map_err(|_|"Could not launch the reviewed MCP server")?;
                 let input=child.stdin.take().ok_or("MCP stdin unavailable")?;let output=BufReader::new(child.stdout.take().ok_or("MCP stdout unavailable")?);
@@ -581,7 +583,7 @@ async fn session(state: &AppState, id: &str) -> Result<Arc<Mutex<Connection>>, S
 }
 fn ensure_profile_current(state:&AppState,connection:&Connection)->Result<(),String>{
     if let Some((id,revision))=&connection.profile_binding {
-        if !state.mcp_profiles.get(id).is_some_and(|p| &p.revision==revision) {
+        if !state.mcp_profiles.get(id).is_some_and(|p| &p.revision==revision && std::fs::canonicalize(&p.executable).ok().and_then(|path|path.to_str().map(str::to_owned)).as_deref()==Some(p.resolved_executable.as_str())) {
             return Err("This server profile changed or was removed. Reconnect and review its tools again.".into());
         }
     }
