@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto';
-import {afterEach,describe,expect,it,vi} from 'vitest';
+import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {createPipeline,validatePipeline,parseProductionMcpDecision,productionMcpRequestId,recoverPipelines,runPipeline,taskList} from '../src/lib/pipeline';
 import {setMcpSession} from '../src/lib/mcp-session';
 import {createMcpJournal} from '../src/lib/mcp-journal';
@@ -17,7 +17,8 @@ function fixture(){
  let current=p;const get=()=>current,set=(next:Project)=>{current=next},run=(signal=new AbortController().signal)=>runPipeline({projectId:p.id,pipelineId:job.id,getProject:get,commit:async fn=>{current=fn(current);await Store.saveProject(current);return current},connection:()=>provider,mediaConnection:()=>provider,signal});return {get,set,run,job,task:job.tasks[0]};
 }
 function response(text:string){return new Response(JSON.stringify({type:'delta',text})+'\n'+JSON.stringify({type:'done',finishReason:'stop'})+'\n',{headers:{'Content-Type':'application/x-ndjson'}})}
-afterEach(()=>{vi.restoreAllMocks();setMcpSession(null)});
+beforeEach(()=>vi.stubGlobal('localStorage',{getItem:()=>null}));
+afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();setMcpSession(null)});
 describe('opt-in production MCP tools',()=>{
  it('calls only the allowed tool once, after the request and unknown claim are durable',async()=>{const h=fixture();let calls=0;vi.spyOn(globalThis,'fetch').mockImplementation(async(url,init)=>{if(String(url).includes('/api/generate'))return response(JSON.stringify({action:'call',name:'scene_info',arguments:{detail:'brief'}}));calls++;const request=JSON.parse(String(init?.body)),saved=(await Store.getProject(h.get().id))!.pipelines![0].tasks[0];expect(saved.mcpRequestId).toBe(request.requestId);const journal=createMcpJournal();try{expect((await journal.get(request.requestId))?.state).toBe('unknown')}finally{await journal.close()}expect(request.name).toBe('scene_info');return Response.json({requestId:request.requestId,result:{content:[{type:'text',text:'done'}]}})});await h.run();expect(calls).toBe(1);expect(h.get().pipelines![0].tasks[0].status).toBe('complete');const requestId=h.get().pipelines![0].tasks[0].mcpRequestId!;expect(requestId).toBe(await productionMcpRequestId(h.get().id,h.job.id,h.task.id));h.set({...h.get(),pipelines:h.get().pipelines!.map(j=>({...j,state:'paused',tasks:j.tasks.map(t=>t.kind==='mcp'?{...t,status:'blocked'}:t)}))});await h.run();expect(calls).toBe(1)});
  it('allows the director to skip without dispatching or creating a request',async()=>{const h=fixture();let calls=0;vi.spyOn(globalThis,'fetch').mockImplementation(async url=>{if(String(url).includes('/api/generate'))return response('{"action":"skip"}');calls++;throw new Error('unexpected call')});await h.run();expect(calls).toBe(0);expect(h.get().pipelines![0].tasks[0].mcpRequestId).toBeUndefined()});
