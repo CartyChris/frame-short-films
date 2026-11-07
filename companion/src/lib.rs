@@ -26,6 +26,7 @@ use tokio_stream::wrappers::ReceiverStream;
 mod cli;
 mod freefield;
 mod integrations;
+mod mcp_profiles;
 mod ollama;
 mod vork;
 mod production_tools;
@@ -37,6 +38,7 @@ pub struct AppState {
     slots: Arc<Semaphore>,
     integrations: Arc<integrations::Hub>,
     cli: Arc<cli::Registry>,
+    mcp_profiles: Arc<mcp_profiles::Registry>,
     production_tools: Arc<production_tools::Hub>,
     freefield: Arc<freefield::Hub>,
     vork: Arc<vork::Hub>,
@@ -49,6 +51,7 @@ impl AppState {
             slots: Arc::new(Semaphore::new(1)),
             integrations: Arc::new(integrations::Hub::default()),
             cli: Arc::new(cli::Registry::default()),
+            mcp_profiles: Arc::new(mcp_profiles::Registry::default()),
             production_tools: Arc::new(production_tools::Hub::default()),
             freefield: Arc::new(freefield::Hub::default()),
             vork: Arc::new(vork::Hub::default()),
@@ -75,6 +78,8 @@ pub fn router(state: AppState) -> Router {
         .route("/cli/profiles", get(cli::profiles).post(cli::register))
         .route("/cli/profiles/remove", post(cli::remove))
         .route("/integrations/status", get(integrations::status))
+        .route("/integrations/mcp/profiles", get(integrations::profiles).post(integrations::register_profile))
+        .route("/integrations/mcp/profiles/remove", post(integrations::remove_profile))
         .route("/integrations/mcp/connect", post(integrations::connect))
         .route("/integrations/mcp/tools", post(integrations::tools))
         .route("/integrations/mcp/call", post(integrations::call))

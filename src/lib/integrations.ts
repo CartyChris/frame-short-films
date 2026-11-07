@@ -10,7 +10,8 @@ export interface IntegrationJob {
  name:string;createdAt:number;updatedAt:number;taskId?:string;model?:string;outputFiles?:string[];creditsConsumed?:number;error?:string;
 }
 export interface McpTool {name:string;description?:string;inputSchema:Record<string,unknown>;annotations?:{readOnlyHint?:boolean;destructiveHint?:boolean;openWorldHint?:boolean}}
-export interface McpConnection {connectionId:string;status:'connected';serverInfo:{name?:string;version?:string};tools:McpTool[]}
+export interface McpConnection {connectionId:string;status:'connected';serverInfo:{name?:string;version?:string};tools:McpTool[];serverFingerprint?:string}
+export interface McpProfile {id:string;name:string;executable:string;args:string[];revision:string}
 export interface CompanionSettings {url:string;token:string}
 export interface IntegrationStatus {blender:{installed:boolean};tripo:{installed:boolean};mcp:{installed:boolean;transports:string[]};note:string}
 export interface BlenderManifest {format:'frame-blender';version:1;direction:'to-blender'|'from-blender';name:string;fps:number;duration:number;document:ThreeDocument;modelFile:'scene.glb';units:'meters';upAxis:'Y'}
@@ -19,7 +20,7 @@ export interface BlenderManifest {format:'frame-blender';version:1;direction:'to
 export async function integrationRequest<T>(settings:CompanionSettings,path:string,body?:unknown,signal?:AbortSignal):Promise<T>{
  const url=new URL(settings.url);if(url.protocol!=='http:'||!['127.0.0.1','localhost','[::1]'].includes(url.hostname)||url.username||url.password||url.search||url.hash||!url.port)throw new Error('Use your local companion address, such as http://127.0.0.1:4319.');
  if(!settings.token)throw new Error('Enter the local companion pairing token first.');
- if(!/^\/integrations\/(status|mcp\/(connect|tools|call|receipt|disconnect))$/.test(path))throw new Error('Unknown integration action.');
+ if(!/^\/integrations\/(status|mcp\/(connect|tools|call|receipt|disconnect|profiles(?:\/remove)?))$/.test(path))throw new Error('Unknown integration action.');
  const controller=new AbortController(),cancel=()=>controller.abort(),timer=setTimeout(cancel,130000);signal?.addEventListener('abort',cancel,{once:true});if(signal?.aborted)cancel();
  try{const response=await fetch(url.origin+path,{method:body===undefined?'GET':'POST',headers:{Authorization:'Bearer '+settings.token,...(body===undefined?{}:{'Content-Type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:controller.signal});
  const result=await response.json();if(!response.ok)throw new Error(result.error||`The companion returned ${response.status}.`);return result as T;}finally{clearTimeout(timer);signal?.removeEventListener('abort',cancel)}

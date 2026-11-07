@@ -1,5 +1,5 @@
-//! Explicitly operated local MCP connections. No model can select or invoke tools
-//! through the generation endpoint, and no executable or shell text is accepted.
+//! Explicitly operated local MCP connections. Custom servers use reviewed, locally
+//! saved executable profiles; commands are never constructed from a shell string.
 use super::{error, executable, AppState};
 use axum::{
     extract::State,
@@ -55,6 +55,7 @@ struct Connection {
     tool_names: HashSet<String>,
     server_info: Value,
     server_digest: String,
+    profile_binding: Option<(String, String)>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -489,10 +490,34 @@ async fn refresh(connection: &mut Connection) -> Result<Vec<Value>, String> {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct RegisterProfile { profile: super::mcp_profiles::ProfileInput, reviewed: bool }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RemoveProfile { id: String }
+pub async fn profiles(State(state): State<AppState>) -> Response {
+    if let Some(message)=state.mcp_profiles.error() { return error(StatusCode::BAD_REQUEST,message); }
+    Json(json!({"profiles":state.mcp_profiles.list()})).into_response()
+}
+pub async fn register_profile(State(state): State<AppState>, Json(request): Json<RegisterProfile>) -> Response {
+    if !request.reviewed { return error(StatusCode::BAD_REQUEST,"Review the exact local executable and arguments before saving this trusted server"); }
+    match state.mcp_profiles.save(request.profile) {
+        Ok(profile) => Json(json!({"profile":profile})).into_response(),
+        Err(message) => error(StatusCode::BAD_REQUEST,&message),
+    }
+}
+pub async fn remove_profile(State(state): State<AppState>, Json(request): Json<RemoveProfile>) -> Response {
+    match state.mcp_profiles.remove(&request.id) {
+        Ok(()) => Json(json!({"removed":true})).into_response(),
+        Err(message) => error(StatusCode::BAD_REQUEST,&message),
+    }
+}
+#[derive(Deserialize)]
+#[serde(rename_all="camelCase", deny_unknown_fields)]
 pub struct ConnectRequest {
     transport: String,
     endpoint: Option<String>,
     token: Option<String>,
+    profile_id: Option<String>,
 }
 pub async fn connect(
     State(state): State<AppState>,
@@ -500,26 +525,39 @@ pub async fn connect(
 ) -> Response {
     let result=async {
         if state.integrations.sessions.lock().await.len()>=8{return Err("Disconnect an existing MCP server before adding another".into());}
-        let transport=match request.transport.as_str(){
-            "http"=>Transport::Http{endpoint:local_endpoint(request.endpoint.as_deref().unwrap_or(""))?,token:request.token.filter(|v|!v.is_empty()),session_id:None,protocol:PROTOCOL.into()},
+        let mut profile_binding=None;
+        let (transport,binding)=match request.transport.as_str(){
+            "http"=>{let endpoint=local_endpoint(request.endpoint.as_deref().unwrap_or(""))?;let binding=json!({"transport":"http","endpoint":endpoint.as_str()});(Transport::Http{endpoint,token:request.token.filter(|v|!v.is_empty()),session_id:None,protocol:PROTOCOL.into()},binding)},
             "blender-stdio"=>{
                 let executable=blender_server().ok_or("A preinstalled mcp-for-blender or blender-mcp executable was not found. Install and configure it yourself first; Frame never downloads it automatically.")?;
+                let binding=json!({"transport":"blender-stdio","executable":executable.to_string_lossy()});
                 let mut child=Command::new(executable).env("BLENDER_HOST","127.0.0.1").env("BLENDER_PORT","9876").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true).spawn().map_err(|_|"Could not launch the installed Blender MCP server")?;
                 let input=child.stdin.take().ok_or("MCP stdin unavailable")?;let output=BufReader::new(child.stdout.take().ok_or("MCP stdout unavailable")?);
-                Transport::Stdio{child,input,output}
+                (Transport::Stdio{child,input,output},binding)
             },
-            _=>return Err("Choose local Streamable HTTP or the installed Blender MCP executable".into()),
+            "custom-stdio"=>{
+                let profile=state.mcp_profiles.get(request.profile_id.as_deref().unwrap_or("")).ok_or("Select a saved local server profile")?;
+                if !super::cli::executable_file(Path::new(&profile.executable)){return Err("The reviewed server executable is no longer available".into());}
+                let binding=json!({"transport":"custom-stdio","profile":profile.id,"revision":profile.revision,"executable":profile.executable,"args":profile.args});
+                profile_binding=Some((profile.id.clone(),profile.revision.clone()));
+                let mut child=Command::new(&profile.executable).args(&profile.args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true).spawn().map_err(|_|"Could not launch the reviewed MCP server")?;
+                let input=child.stdin.take().ok_or("MCP stdin unavailable")?;let output=BufReader::new(child.stdout.take().ok_or("MCP stdout unavailable")?);
+                (Transport::Stdio{child,input,output},binding)
+            },
+            _=>return Err("Choose a supported local MCP connection".into()),
         };
-        let mut connection=Connection{transport,tool_names:HashSet::new(),server_info:json!({}),server_digest:String::new()};
+        let mut connection=Connection{transport,tool_names:HashSet::new(),server_info:json!({}),server_digest:String::new(),profile_binding};
         let initialized=connection.transport.send("initialize",json!({"protocolVersion":PROTOCOL,"capabilities":{},"clientInfo":{"name":"Frame","version":"2.0.0"}}),false).await?;
         connection.server_info=initialized.get("serverInfo").cloned().ok_or("MCP initialize returned no server identity")?;
-        let server_binding=match &connection.transport {Transport::Http{endpoint,..}=>json!({"transport":"http","endpoint":endpoint.as_str(),"serverInfo":connection.server_info}),Transport::Stdio{..}=>json!({"transport":"blender-stdio","executable":blender_server().map(|p|p.to_string_lossy().to_string()),"serverInfo":connection.server_info})};
+        let mut server_binding=binding;
+        server_binding["serverInfo"]=connection.server_info.clone();
         connection.server_digest=digest(&serde_json::to_vec(&server_binding).map_err(|_|"Cannot identify the MCP server")?);
         if let Transport::Http{protocol,..}=&mut connection.transport { *protocol=initialized["protocolVersion"].as_str().ok_or("MCP initialize returned no protocol version")?.to_string(); }
         connection.transport.send("notifications/initialized",json!({}),true).await?;
-        let tools=refresh(&mut connection).await?;let id=uuid::Uuid::new_v4().to_string();let info=connection.server_info.clone();
+        ensure_profile_current(&state,&connection)?;
+        let tools=refresh(&mut connection).await?;ensure_profile_current(&state,&connection)?;let id=uuid::Uuid::new_v4().to_string();let info=connection.server_info.clone();let fingerprint=connection.server_digest.clone();
         state.integrations.sessions.lock().await.insert(id.clone(),Arc::new(Mutex::new(connection)));
-        Ok::<_,String>(json!({"connectionId":id,"status":"connected","serverInfo":info,"tools":tools}))
+        Ok::<_,String>(json!({"connectionId":id,"status":"connected","serverInfo":info,"tools":tools,"serverFingerprint":fingerprint}))
     }.await;
     match result {
         Ok(value) => Json(value).into_response(),
@@ -541,6 +579,14 @@ async fn session(state: &AppState, id: &str) -> Result<Arc<Mutex<Connection>>, S
         .cloned()
         .ok_or_else(|| "MCP connection expired or disconnected; connect again".into())
 }
+fn ensure_profile_current(state:&AppState,connection:&Connection)->Result<(),String>{
+    if let Some((id,revision))=&connection.profile_binding {
+        if !state.mcp_profiles.get(id).is_some_and(|p| &p.revision==revision) {
+            return Err("This server profile changed or was removed. Reconnect and review its tools again.".into());
+        }
+    }
+    Ok(())
+}
 pub async fn tools(
     State(state): State<AppState>,
     Json(request): Json<ConnectionRequest>,
@@ -548,6 +594,7 @@ pub async fn tools(
     let result = async {
         let connection = session(&state, &request.connection_id).await?;
         let mut connection = connection.lock().await;
+        ensure_profile_current(&state,&connection)?;
         refresh(&mut connection).await
     }
     .await;
@@ -579,6 +626,7 @@ pub async fn call(State(state): State<AppState>, Json(request): Json<CallRequest
     let result=async {
         let connection=session(&state,&request.connection_id).await?;
         let mut connection=connection.lock().await;
+        ensure_profile_current(&state,&connection)?;
         if !connection.tool_names.contains(&request.name){return Err("Select a tool from the current server's discovered tool list".into())}
         let arguments=serde_json::to_vec(&request.arguments).map_err(|_|"Invalid tool arguments".to_string())?;
         if arguments.len()>4*1024*1024{return Err("Tool arguments exceed the size limit".into())}
@@ -687,6 +735,55 @@ mod tests {
             .unwrap()["isError"],
             true
         );
+    }
+    #[tokio::test]
+    async fn reviewed_stdio_profile_discovers_calls_and_revokes_after_edit() {
+        use axum::body::{to_bytes, Body};
+        use axum::http::Request;
+        use tower::ServiceExt;
+        let temp=tempfile::tempdir().unwrap();
+        let script=temp.path().join("mcp_fixture.py");
+        std::fs::write(&script, r#"import sys, json
+for line in sys.stdin:
+    msg=json.loads(line)
+    if 'id' not in msg: continue
+    method=msg.get('method')
+    if method=='initialize': result={'protocolVersion':'2025-11-25','serverInfo':{'name':'Fixture','version':'1'},'capabilities':{'tools':{}}}
+    elif method=='tools/list': result={'tools':[{'name':'pose','inputSchema':{'type':'object'}}]}
+    elif method=='tools/call': result={'content':[{'type':'text','text':'posed'}]}
+    else: result={}
+    print(json.dumps({'jsonrpc':'2.0','id':msg['id'],'result':result}),flush=True)
+"#).unwrap();
+        let python=std::fs::canonicalize("/usr/bin/python3").unwrap();
+        let mut state=AppState::new("fixture-token".into(),super::super::default_origins());
+        state.integrations=Arc::new(Hub{sessions:Mutex::new(HashMap::new()),ledger_dir:Ok(temp.path().join("ledger"))});
+        state.mcp_profiles=Arc::new(super::super::mcp_profiles::Registry::load(Some(temp.path().join("profiles.json"))));
+        let app=super::super::router(state);
+        let req=|path:&str, body:Value| Request::builder().method("POST").uri(path).header("origin","http://localhost:5173").header("authorization","Bearer fixture-token").header("content-type","application/json").body(Body::from(body.to_string())).unwrap();
+        let profile=json!({"id":"cascadeur","name":"Cascadeur test","executable":python,"args":["-I",script]});
+        let denied=app.clone().oneshot(req("/integrations/mcp/profiles",json!({"profile":profile,"reviewed":false}))).await.unwrap();
+        assert_eq!(denied.status(),StatusCode::BAD_REQUEST);
+        let saved=app.clone().oneshot(req("/integrations/mcp/profiles",json!({"profile":profile,"reviewed":true}))).await.unwrap();
+        assert_eq!(saved.status(),StatusCode::OK);
+        let connected=app.clone().oneshot(req("/integrations/mcp/connect",json!({"transport":"custom-stdio","profileId":"cascadeur"}))).await.unwrap();
+        assert_eq!(connected.status(),StatusCode::OK);
+        let value:Value=serde_json::from_slice(&to_bytes(connected.into_body(),MAX_RESPONSE).await.unwrap()).unwrap();
+        assert_eq!(value["tools"][0]["name"],"pose");assert_eq!(value["serverFingerprint"].as_str().unwrap().len(),64);
+        let id=value["connectionId"].as_str().unwrap();
+        let response=app.clone().oneshot(req("/integrations/mcp/call",json!({"connectionId":id,"name":"pose","arguments":{},"requestId":"pose-once","approved":true}))).await.unwrap();
+        assert_eq!(response.status(),StatusCode::OK);
+        let duplicate=app.clone().oneshot(req("/integrations/mcp/call",json!({"connectionId":id,"name":"pose","arguments":{},"requestId":"pose-once","approved":true}))).await.unwrap();
+        assert_eq!(duplicate.status(),StatusCode::BAD_REQUEST);
+        let updated=app.clone().oneshot(req("/integrations/mcp/profiles",json!({"profile":profile,"reviewed":true}))).await.unwrap();
+        assert_eq!(updated.status(),StatusCode::OK);
+        let stale=app.clone().oneshot(req("/integrations/mcp/call",json!({"connectionId":id,"name":"pose","arguments":{},"requestId":"after-edit","approved":true}))).await.unwrap();
+        assert_eq!(stale.status(),StatusCode::BAD_REQUEST);
+        let text=String::from_utf8(to_bytes(stale.into_body(),MAX_RESPONSE).await.unwrap().to_vec()).unwrap();
+        assert!(text.contains("profile changed"));
+        let reconnected=app.clone().oneshot(req("/integrations/mcp/connect",json!({"transport":"custom-stdio","profileId":"cascadeur"}))).await.unwrap();
+        assert_eq!(reconnected.status(),StatusCode::OK);
+        let next:Value=serde_json::from_slice(&to_bytes(reconnected.into_body(),MAX_RESPONSE).await.unwrap()).unwrap();
+        assert_ne!(value["serverFingerprint"],next["serverFingerprint"]);
     }
     #[tokio::test]
     async fn real_http_mcp_discovery_and_selected_call() {

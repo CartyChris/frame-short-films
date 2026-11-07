@@ -10,3 +10,10 @@ describe('local MCP session',()=>{
   setMcpSession(null);unsubscribe();expect(currentMcpSession()).toBeNull();expect(updates).toBe(2);
  });
 });
+
+it('requires the companion identity for a reviewed local executable profile',async()=>{
+ const first='a'.repeat(64),second='b'.repeat(64);
+ expect(await mcpServerFingerprint('custom-stdio','',{name:'fixture'},first)).toBe(first);
+ expect(await mcpServerFingerprint('custom-stdio','',{name:'fixture'},second)).not.toBe(first);
+ await expect(mcpServerFingerprint('custom-stdio','',{name:'fixture'})).rejects.toThrow('did not identify');
+});
