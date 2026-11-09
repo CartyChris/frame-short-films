@@ -14,7 +14,7 @@ No account is needed to edit, play the included films, compose procedural sound,
 
 ## Frame in action
 
-These screenshots show an earlier Frame 7 build; the interface continues to evolve. The sample project shown is optional.
+These screenshots show an earlier Frame build; the interface continues to evolve. The sample project shown is optional.
 
 ### Plan a film in Chat
 
