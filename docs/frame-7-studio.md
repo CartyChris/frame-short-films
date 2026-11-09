@@ -1,4 +1,4 @@
-# Frame 7 studio guide
+# Frame v7 studio guide
 
 Frame keeps films and attachments on the device where you work. Export a complete project backup when moving between devices or before clearing browser data. An imported backup becomes a separate project. The first-launch sample is optional and stays separate from a blank film.
 
