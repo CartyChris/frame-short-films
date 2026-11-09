@@ -1,10 +1,32 @@
 # Frame — Short Films AI Harness
 
-A local-first film studio for animated 3D scenes, code animation, generated footage, music, and narration. Frame combines a conversational director, automatic production, a character workshop, and a PulseForge-powered Sound Studio. Built with TypeScript, React, Three.js, Rust/WebAssembly, and a Rust/Tauri macOS shell.
+**Bring a story to life, one editable shot at a time.** Frame is an open-source film studio where you can combine animated 3D scenes, code, generated footage, music, and narration on one timeline. Sketch an idea in Chat, build a cast, direct a scene, and keep shaping the result by hand or with your own connected models.
 
-**Open the hosted studio:** https://frame-short-films.vercel.app
+Frame runs on the web and as a macOS app. It is built with TypeScript, React, Three.js, Rust/WebAssembly, and Tauri, with a PulseForge-powered Sound Studio.
+
+**Frame is a work in progress.** Some integrations require separately installed tools or provider accounts, and generated results need review. We welcome developers, artists, filmmakers, testers, and curious experimenters: open an issue, suggest an improvement, contribute a fix, or take the project in a new direction.
+
+Frame's original project code is available under the [MIT License](LICENSE): use, modify, share, fork, or rewrite it, including for commercial projects, while retaining the required copyright and license notice. Bundled third-party components, fonts, models, and services have their own terms; see [third-party notices](docs/THIRD-PARTY-NOTICES.md) and the [included references and licenses](#included-references-and-licenses).
+
+**[Open the hosted studio](https://frame-short-films.vercel.app)** · **[Report an issue or share an idea](https://github.com/CartyChris/frame-short-films/issues)**
 
 No account is needed to edit, play the included films, compose procedural sound, or export HTML. Connect your own model account when you want AI generation. Provider credits are billed by that provider.
+
+## Frame in action
+
+These screenshots show an earlier Frame 7 build; the interface continues to evolve. The sample project shown is optional.
+
+### Plan a film in Chat
+
+Describe an idea and develop its story, cast, and shot plan in the studio.
+
+![Frame's Chat workspace showing a film planning conversation and project details](docs/screenshots/chat-planning.png)
+
+### Create in Motion Studio
+
+Choose a composition and edit motion elements alongside the rest of your film.
+
+![Frame's Motion Studio with composition choices, playback controls, and an inspector](docs/screenshots/motion-studio.png)
 
 ## New in Frame 7
 
