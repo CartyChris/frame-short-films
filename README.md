@@ -28,11 +28,11 @@ Choose a composition and edit motion elements alongside the rest of your film.
 
 ![Frame's Motion Studio with composition choices, playback controls, and an inspector](docs/screenshots/motion-studio.png)
 
-## New in Frame 7
+## New in Frame 
 
 Chat supports attached files and an editable shot outline. Production tools connect to separately installed ComfyUI and Freefield servers, with scoped Comfy Cloud and Higgsfield Cloud adapters. [Frame 7 studio guide](docs/frame-7-studio.md) describes the exact support and limitations. Jolt rigid-body baking, seeded Three.quarks effects, GPU path tracing and optically centered playback controls extend the existing Anime.js/Lottie, cinematic 3D, caption/beat/cut and ComfyUI workflows. All use the existing saved film and recovery system. [Integration guide and boundaries](docs/MOTION-INTEGRATIONS.md).
 
-## Start with Frame 7
+## Start with Frame
 
 - **Chat:** develop your idea with a connected model, answer useful questions, and save a proposed story/cast/shot plan. The local guide can create a basic outline without an API; it is labelled as a guide rather than AI inference.
 - **Produce:** describe the film, choose its duration and animation approach, then choose **Produce the movie**. This explicitly starts an automatic queue: the agent plans the story, designs reusable characters and models, generates each shot, directs an editable musical arrangement, and optionally creates local narration. Completed scenes are applied to the timeline; previous scene versions and all received drafts are retained. You can pause, change the connected model, and resume.
